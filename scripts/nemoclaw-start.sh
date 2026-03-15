@@ -62,9 +62,16 @@ fi
 openclaw plugins install /opt/nemoclaw > /dev/null 2>&1 || true
 
 echo ""
-echo "NemoClaw ready. Nemotron 3 Super 120B configured."
+echo "  ┌─────────────────────────────────────────────────────┐"
+echo "  │  NemoClaw ready                                     │"
+echo "  │                                                     │"
+echo "  │  Model:     nvidia/nemotron-3-super-120b-a12b       │"
+echo "  │             Nemotron 3 Super 120B                   │"
+echo "  │  Provider:  nvidia (NVIDIA_API_KEY)                 │"
+echo "  │  Plugin:    nemoclaw                                │"
+echo "  └─────────────────────────────────────────────────────┘"
 echo ""
-echo "  openclaw agent --agent main --local -m 'your prompt' --session-id test1"
+echo "  openclaw agent --agent main --local -m 'your prompt' --session-id s1"
 echo ""
 
 # If arguments were passed, run them; otherwise drop into interactive shell
