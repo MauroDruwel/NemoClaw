@@ -103,7 +103,7 @@ nemoclaw setup
 nemoclaw deploy my-gpu-box
 ```
 
-Requires the [Brev CLI](https://brev.nvidia.com). The deploy script installs Docker, NVIDIA Container Toolkit (if GPU present), and OpenShell on the VM automatically.
+Requires the [Brev CLI](https://github.com/brevdev/brev-cli) and [Brev account](https://brev.nvidia.com). The deploy script installs Docker, NVIDIA Container Toolkit (if GPU present), and OpenShell on the VM automatically.
 
 ## Usage
 
