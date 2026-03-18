@@ -63,8 +63,21 @@ function isOpenshellInstalled() {
 
 function installOpenshell() {
   console.log("  Installing openshell CLI...");
-  run(`bash "${path.join(SCRIPTS, "install.sh")}"`, { ignoreError: true });
+  run(`bash "${path.join(SCRIPTS, "install-openshell.sh")}"`, { ignoreError: true });
   return isOpenshellInstalled();
+}
+
+function sleep(seconds) {
+  require("child_process").spawnSync("sleep", [String(seconds)]);
+}
+
+function waitForSandboxReady(sandboxName, attempts = 10, delaySeconds = 2) {
+  for (let i = 0; i < attempts; i += 1) {
+    const exists = runCapture(`openshell sandbox get "${sandboxName}" 2>/dev/null`, { ignoreError: true });
+    if (exists) return true;
+    sleep(delaySeconds);
+  }
+  return false;
 }
 
 // ── Step 1: Preflight ────────────────────────────────────────────
@@ -113,7 +126,11 @@ async function startGateway(gpu) {
   run("openshell gateway destroy -g nemoclaw 2>/dev/null || true", { ignoreError: true });
 
   const gwArgs = ["--name", "nemoclaw"];
-  if (gpu && gpu.nimCapable) gwArgs.push("--gpu");
+  // Do NOT pass --gpu here. On DGX Spark (and most GPU hosts), inference is
+  // routed through a host-side provider (Ollama, vLLM, or cloud API) — the
+  // sandbox itself does not need direct GPU access. Passing --gpu causes
+  // FailedPrecondition errors when the gateway's k3s device plugin cannot
+  // allocate GPUs. See: https://build.nvidia.com/spark/nemoclaw/instructions
 
   run(`openshell gateway start ${gwArgs.join(" ")}`, { ignoreError: false });
 
@@ -128,7 +145,7 @@ async function startGateway(gpu) {
       console.error("  Gateway failed to start. Run: openshell gateway info");
       process.exit(1);
     }
-    require("child_process").spawnSync("sleep", ["2"]);
+    sleep(2);
   }
 
   // CoreDNS fix — always run. k3s-inside-Docker has broken DNS on all platforms.
@@ -142,7 +159,7 @@ async function startGateway(gpu) {
     run(`bash "${path.join(SCRIPTS, "fix-coredns.sh")}" 2>&1 || true`, { ignoreError: true });
   }
   // Give DNS a moment to propagate
-  require("child_process").spawnSync("sleep", ["5"]);
+  sleep(5);
 }
 
 // ── Step 3: Sandbox ──────────────────────────────────────────────
@@ -200,7 +217,7 @@ async function createSandbox(gpu) {
     `--name "${sandboxName}"`,
     `--policy "${basePolicyPath}"`,
   ];
-  if (gpu && gpu.nimCapable) createArgs.push("--gpu");
+  // --gpu is intentionally omitted. See comment in startGateway().
 
   console.log(`  Creating sandbox '${sandboxName}' (this takes a few minutes on first run)...`);
   const chatUiUrl = process.env.CHAT_UI_URL || 'http://127.0.0.1:18789';
@@ -208,9 +225,15 @@ async function createSandbox(gpu) {
   if (process.env.NVIDIA_API_KEY) {
     envArgs.push(`NVIDIA_API_KEY=${process.env.NVIDIA_API_KEY}`);
   }
-  run(`openshell sandbox create ${createArgs.join(" ")} -- env ${envArgs.join(" ")} nemoclaw-start 2>&1 | awk '/Sandbox allocated/{if(!seen){print;seen=1}next}1'`);
+  // set -o pipefail ensures the openshell exit code propagates through the awk pipe.
+  // Without it, awk's exit code (always 0) would mask a failed sandbox create.
+  run(`set -o pipefail; openshell sandbox create ${createArgs.join(" ")} -- env ${envArgs.join(" ")} nemoclaw-start 2>&1 | awk '/Sandbox allocated/{if(!seen){print;seen=1}next}1'`);
 
-  // Forward dashboard port separately
+  // Release any stale forward on port 18789 before claiming it for the new sandbox.
+  // A previous onboard run may have left the port forwarded to a different sandbox,
+  // which would silently prevent the new sandbox's dashboard from being reachable.
+  run(`openshell forward stop 18789 2>/dev/null || true`, { ignoreError: true });
+  // Forward dashboard port to the new sandbox
   run(`openshell forward start --background 18789 "${sandboxName}"`, { ignoreError: true });
 
   // Clean up build context
@@ -368,7 +391,7 @@ async function setupNim(sandboxName, gpu) {
       if (!ollamaRunning) {
         console.log("  Starting Ollama...");
         run("OLLAMA_HOST=0.0.0.0:11434 ollama serve > /dev/null 2>&1 &", { ignoreError: true });
-        require("child_process").spawnSync("sleep", ["2"]);
+        sleep(2);
       }
       console.log("  ✓ Using Ollama on localhost:11434");
       provider = "ollama-local";
@@ -378,7 +401,7 @@ async function setupNim(sandboxName, gpu) {
       run("brew install ollama", { ignoreError: true });
       console.log("  Starting Ollama...");
       run("OLLAMA_HOST=0.0.0.0:11434 ollama serve > /dev/null 2>&1 &", { ignoreError: true });
-      require("child_process").spawnSync("sleep", ["2"]);
+        sleep(2);
       console.log("  ✓ Using Ollama on localhost:11434");
       provider = "ollama-local";
       model = "nemotron-3-nano";
@@ -506,9 +529,30 @@ async function setupPolicies(sandboxName) {
   console.log("");
 
   if (isNonInteractive()) {
+    if (!waitForSandboxReady(sandboxName)) {
+      console.error(`  Sandbox '${sandboxName}' was not ready for policy application.`);
+      process.exit(1);
+    }
     console.log(`  [non-interactive] Applying suggested presets: ${suggestions.join(", ")}`);
     for (const name of suggestions) {
-      policies.applyPreset(sandboxName, name);
+      let appliedOk = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          policies.applyPreset(sandboxName, name);
+          appliedOk = true;
+          break;
+        } catch (err) {
+          const message = err && err.message ? err.message : String(err);
+          if (!message.includes("sandbox not found") || attempt === 2) {
+            throw err;
+          }
+          sleep(2);
+        }
+      }
+      if (!appliedOk) {
+        console.error(`  Failed to apply policy preset '${name}' to sandbox '${sandboxName}'.`);
+        process.exit(1);
+      }
     }
   } else {
     const answer = await prompt(`  Apply suggested presets (${suggestions.join(", ")})? [Y/n/list]: `);
