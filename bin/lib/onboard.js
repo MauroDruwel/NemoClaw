@@ -438,71 +438,30 @@ async function setupNim(sandboxName, gpu) {
   const vllmRunning = !!runCapture("curl -sf http://localhost:8000/v1/models 2>/dev/null", { ignoreError: true });
   const requestedProvider = isNonInteractive() ? getNonInteractiveProvider() : null;
   const requestedModel = isNonInteractive() ? getNonInteractiveModel(requestedProvider || "cloud") : null;
-
-  // Auto-select only with NEMOCLAW_EXPERIMENTAL=1 (prevents silent misconfiguration)
-  if (EXPERIMENTAL) {
-    if (vllmRunning) {
-      console.log("  ✓ vLLM detected on localhost:8000 — using it [experimental]");
-      provider = "vllm-local";
-      model = "vllm-local";
-      registry.updateSandbox(sandboxName, { model, provider, nimContainer });
-      return { model, provider };
-    }
-    if (ollamaRunning) {
-      console.log("  ✓ Ollama detected on localhost:11434 — using it [experimental]");
-      provider = "ollama-local";
-      model = DEFAULT_OLLAMA_MODEL;
-      registry.updateSandbox(sandboxName, { model, provider, nimContainer });
-      return { model, provider };
-    }
-  }
-
-  // Non-interactive: honor NEMOCLAW_PROVIDER before building interactive options
-  if (isNonInteractive() && requestedProvider) {
-    const providerKey = requestedProvider;
-    console.log(`  [non-interactive] Provider: ${providerKey}`);
-    if (providerKey === "ollama") {
-      if (!ollamaRunning) {
-        console.error("  Ollama is not running on localhost:11434. Start it first.");
-        process.exit(1);
-      }
-      provider = "ollama-local";
-      model = requestedModel || "nemotron-3-nano";
-      registry.updateSandbox(sandboxName, { model, provider, nimContainer });
-      return { model, provider };
-    } else if (providerKey === "vllm") {
-      if (!vllmRunning) {
-        console.error("  vLLM is not running on localhost:8000. Start it first.");
-        process.exit(1);
-      }
-      provider = "vllm-local";
-      model = requestedModel || "vllm-local";
-      registry.updateSandbox(sandboxName, { model, provider, nimContainer });
-      return { model, provider };
-    } else if (providerKey === "nim") {
-      if (!EXPERIMENTAL) {
-        console.error("  NEMOCLAW_PROVIDER=nim requires NEMOCLAW_EXPERIMENTAL=1.");
-        process.exit(1);
-      }
-      if (!gpu || !gpu.nimCapable) {
-        console.error("  Local NIM requires a compatible NVIDIA GPU.");
-        process.exit(1);
-      }
-    }
-    // "cloud" or "nim" fall through to normal flow below
-  }
-
   // Build options list — only show local options with NEMOCLAW_EXPERIMENTAL=1
   const options = [];
   if (EXPERIMENTAL && gpu && gpu.nimCapable) {
     options.push({ key: "nim", label: "Local NIM container (NVIDIA GPU) [experimental]" });
   }
-  options.push({ key: "cloud", label: "NVIDIA Cloud API (build.nvidia.com)" });
+  options.push({
+    key: "cloud",
+    label:
+      "NVIDIA Cloud API (build.nvidia.com)" +
+      (EXPERIMENTAL && !ollamaRunning && !vllmRunning ? " (recommended)" : ""),
+  });
   if (EXPERIMENTAL && (hasOllama || ollamaRunning)) {
-    options.push({ key: "ollama", label: `Local Ollama (localhost:11434)${ollamaRunning ? " — running" : ""} [experimental]` });
+    options.push({
+      key: "ollama",
+      label:
+        `Local Ollama (localhost:11434)${ollamaRunning ? " — running" : ""} [experimental]` +
+        (ollamaRunning ? " (suggested)" : ""),
+    });
   }
   if (EXPERIMENTAL && vllmRunning) {
-    options.push({ key: "vllm", label: "Existing vLLM instance (localhost:8000) — running [experimental]" });
+    options.push({
+      key: "vllm",
+      label: "Existing vLLM instance (localhost:8000) — running [experimental] (suggested)",
+    });
   }
 
   // On macOS without Ollama, offer to install it
@@ -522,6 +481,15 @@ async function setupNim(sandboxName, gpu) {
       }
       console.log(`  [non-interactive] Provider: ${selected.key}`);
     } else {
+      const suggestions = [];
+      if (vllmRunning) suggestions.push("vLLM");
+      if (ollamaRunning) suggestions.push("Ollama");
+      if (suggestions.length > 0) {
+        console.log(`  Detected local inference option${suggestions.length > 1 ? "s" : ""}: ${suggestions.join(", ")}`);
+        console.log("  Select one explicitly to use it. Press Enter to keep the cloud default.");
+        console.log("");
+      }
+
       console.log("");
       console.log("  Inference options:");
       options.forEach((o, i) => {
@@ -866,4 +834,4 @@ async function onboard(opts = {}) {
   printDashboard(sandboxName, model, provider);
 }
 
-module.exports = { buildSandboxConfigSyncScript, onboard };
+module.exports = { buildSandboxConfigSyncScript, onboard, setupNim };
