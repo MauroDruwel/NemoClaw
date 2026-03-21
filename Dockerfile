@@ -100,5 +100,15 @@ os.chmod(path, 0o600)"
 RUN openclaw doctor --fix > /dev/null 2>&1 || true \
     && openclaw plugins install /opt/nemoclaw > /dev/null 2>&1 || true
 
+# Lock openclaw.json via DAC: chown to root so the sandbox user cannot modify
+# it at runtime.  This works regardless of Landlock enforcement status.
+# The Landlock policy (/sandbox/.openclaw in read_only) provides defense-in-depth
+# once OpenShell enables enforcement.
+# Ref: https://github.com/NVIDIA/NemoClaw/issues/514
+USER root
+RUN chown root:root /sandbox/.openclaw/openclaw.json \
+    && chmod 444 /sandbox/.openclaw/openclaw.json
+USER sandbox
+
 ENTRYPOINT ["/bin/bash"]
 CMD []
