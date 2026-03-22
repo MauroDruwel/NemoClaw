@@ -15,6 +15,12 @@ const DEFAULT_ROUTE_PROFILE = "inference-local";
 const DEFAULT_ROUTE_CREDENTIAL_ENV = "OPENAI_API_KEY";
 const MANAGED_PROVIDER_ID = "inference";
 const { DEFAULT_OLLAMA_MODEL } = require("./local-inference");
+const DEFAULT_LMSTUDIO_MODEL = "openreasoning-nemotron-7b";
+
+// Providers that use local models (not cloud API keys)
+const LOCAL_MODEL_PROVIDERS = new Set([
+  "ollama-local", "ollama-k3s", "lmstudio-local", "lmstudio-k3s",
+]);
 
 function getProviderSelectionConfig(provider, model) {
   switch (provider) {
@@ -67,7 +73,7 @@ function getProviderSelectionConfig(provider, model) {
         endpointType: "custom",
         endpointUrl: INFERENCE_ROUTE_URL,
         ncpPartner: null,
-        model: model || DEFAULT_OLLAMA_MODEL,
+        model: model || DEFAULT_LMSTUDIO_MODEL,
         profile: DEFAULT_ROUTE_PROFILE,
         credentialEnv: DEFAULT_ROUTE_CREDENTIAL_ENV,
         provider,
@@ -78,7 +84,7 @@ function getProviderSelectionConfig(provider, model) {
         endpointType: "custom",
         endpointUrl: INFERENCE_ROUTE_URL,
         ncpPartner: null,
-        model: model || "lmstudio-local",
+        model: model || DEFAULT_LMSTUDIO_MODEL,
         profile: DEFAULT_ROUTE_PROFILE,
         credentialEnv: DEFAULT_ROUTE_CREDENTIAL_ENV,
         provider,
@@ -90,14 +96,17 @@ function getProviderSelectionConfig(provider, model) {
 }
 
 function getOpenClawPrimaryModel(provider, model) {
-  const resolvedModel =
-    model || (provider === "ollama-local" || provider === "ollama-k3s" || provider === "lmstudio-k3s" || provider === "lmstudio-local" ? DEFAULT_OLLAMA_MODEL : DEFAULT_CLOUD_MODEL);
+  let resolvedModel = model;
+  if (!resolvedModel) {
+    resolvedModel = LOCAL_MODEL_PROVIDERS.has(provider) ? DEFAULT_OLLAMA_MODEL : DEFAULT_CLOUD_MODEL;
+  }
   return resolvedModel ? `${MANAGED_PROVIDER_ID}/${resolvedModel}` : null;
 }
 
 module.exports = {
   CLOUD_MODEL_OPTIONS,
   DEFAULT_CLOUD_MODEL,
+  DEFAULT_LMSTUDIO_MODEL,
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_ROUTE_CREDENTIAL_ENV,
   DEFAULT_ROUTE_PROFILE,

@@ -44,11 +44,11 @@ function getLocalProviderBaseUrl(provider) {
   // that resolves to the pod's own loopback. Use the gateway container's
   // Docker network IP instead (the k3s node's InternalIP).
   if (provider === "ollama-k3s") {
-    const { getGatewayIp } = require("./ollama-container");
+    const { getGatewayIp } = require("./gateway");
     return `http://${getGatewayIp()}:11434/v1`;
   }
   if (provider === "lmstudio-k3s") {
-    const { getGatewayIp } = require("./ollama-container");
+    const { getGatewayIp } = require("./gateway");
     return `http://${getGatewayIp()}:1234/v1`;
   }
   const hostUrl = getHostUrl();
@@ -259,7 +259,6 @@ module.exports = {
   getWsl2HostIp,
   isOllamaBoundToAllInterfaces,
   parseOllamaList,
-  shellQuote,
   validateOllamaModel,
   validateLocalProvider,
 };

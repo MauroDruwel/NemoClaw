@@ -35,12 +35,12 @@ set -uo pipefail
 # All Nemotron models offered via sidecar onboard.
 # Non-Nemotron models (qwen, llama, etc.) are user-managed, not tested here.
 if [ -n "${OLLAMA_MODELS:-}" ]; then
-  read -ra OLLAMA_MODELS <<< "$OLLAMA_MODELS"
+  read -ra OLLAMA_MODELS <<<"$OLLAMA_MODELS"
 else
   OLLAMA_MODELS=("nemotron-3-nano:30b")
 fi
 if [ -n "${LMSTUDIO_MODELS:-}" ]; then
-  read -ra LMSTUDIO_MODELS <<< "$LMSTUDIO_MODELS"
+  read -ra LMSTUDIO_MODELS <<<"$LMSTUDIO_MODELS"
 else
   LMSTUDIO_MODELS=(
     "openreasoning-nemotron-7b@q4_k_m"
@@ -60,11 +60,26 @@ FAIL=0
 SKIP=0
 TOTAL=0
 
-pass() { ((PASS++)); ((TOTAL++)); printf '\033[32m  PASS: %s\033[0m\n' "$1"; }
-fail() { ((FAIL++)); ((TOTAL++)); printf '\033[31m  FAIL: %s\033[0m\n' "$1"; }
-skip() { ((SKIP++)); ((TOTAL++)); printf '\033[33m  SKIP: %s\033[0m\n' "$1"; }
-section() { echo ""; printf '\033[1;36m=== %s ===\033[0m\n' "$1"; }
-info()  { printf '\033[1;34m  [info]\033[0m %s\n' "$1"; }
+pass() {
+  ((PASS++))
+  ((TOTAL++))
+  printf '\033[32m  PASS: %s\033[0m\n' "$1"
+}
+fail() {
+  ((FAIL++))
+  ((TOTAL++))
+  printf '\033[31m  FAIL: %s\033[0m\n' "$1"
+}
+skip() {
+  ((SKIP++))
+  ((TOTAL++))
+  printf '\033[33m  SKIP: %s\033[0m\n' "$1"
+}
+section() {
+  echo ""
+  printf '\033[1;36m=== %s ===\033[0m\n' "$1"
+}
+info() { printf '\033[1;34m  [info]\033[0m %s\n' "$1"; }
 
 # ── JSON results accumulator ──────────────────────────────────
 JSON_TESTS="["
@@ -91,7 +106,7 @@ write_results() {
   gpu_info=$(nvidia-smi -L 2>/dev/null | head -1 || echo "unknown")
   gpu_info="${gpu_info//\"/\\\"}"
 
-  cat > "$RESULTS_FILE" <<EOF
+  cat >"$RESULTS_FILE" <<EOF
 {
   "hostname": "$(hostname)",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -140,7 +155,7 @@ fi
 pass "Not WSL2 (native Linux)"
 
 # Docker must be running
-if docker info > /dev/null 2>&1; then
+if docker info >/dev/null 2>&1; then
   pass "Docker is running"
 else
   fail "Docker is not running"
@@ -148,7 +163,7 @@ else
 fi
 
 # NVIDIA GPU required
-if nvidia-smi -L > /dev/null 2>&1; then
+if nvidia-smi -L >/dev/null 2>&1; then
   GPU_INFO=$(nvidia-smi -L | head -1)
   pass "NVIDIA GPU detected: $GPU_INFO"
 else
@@ -165,10 +180,10 @@ info "LM Studio models: ${LMSTUDIO_MODELS[*]}"
 
 # Pre-cleanup
 info "Cleaning up any leftover state from previous runs..."
-if command -v nemoclaw > /dev/null 2>&1; then
+if command -v nemoclaw >/dev/null 2>&1; then
   nemoclaw "$SANDBOX_NAME" destroy 2>/dev/null || true
 fi
-if command -v openshell > /dev/null 2>&1; then
+if command -v openshell >/dev/null 2>&1; then
   openshell sandbox delete "$SANDBOX_NAME" 2>/dev/null || true
   openshell gateway destroy -g nemoclaw 2>/dev/null || true
 fi
@@ -186,16 +201,19 @@ FIRST_OLLAMA_MODEL="${OLLAMA_MODELS[0]}"
 info "Provider: ollama (sidecar), Model: $FIRST_OLLAMA_MODEL"
 info "Running install.sh --non-interactive..."
 
-cd "$REPO" || { fail "Could not cd to repo root: $REPO"; exit 1; }
+cd "$REPO" || {
+  fail "Could not cd to repo root: $REPO"
+  exit 1
+}
 
 INSTALL_LOG="/tmp/nemoclaw-sidecar-e2e-install-ollama.log"
 NEMOCLAW_NON_INTERACTIVE=1 \
-NEMOCLAW_PROVIDER=ollama \
-NEMOCLAW_MODEL="$FIRST_OLLAMA_MODEL" \
-NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME" \
-NEMOCLAW_RECREATE_SANDBOX=1 \
-NEMOCLAW_POLICY_MODE=suggested \
-  bash install.sh --non-interactive > "$INSTALL_LOG" 2>&1 &
+  NEMOCLAW_PROVIDER=ollama \
+  NEMOCLAW_MODEL="$FIRST_OLLAMA_MODEL" \
+  NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME" \
+  NEMOCLAW_RECREATE_SANDBOX=1 \
+  NEMOCLAW_POLICY_MODE=suggested \
+  bash install.sh --non-interactive >"$INSTALL_LOG" 2>&1 &
 install_pid=$!
 tail -f "$INSTALL_LOG" --pid=$install_pid 2>/dev/null &
 tail_pid=$!
@@ -260,7 +278,7 @@ if [ "$OLLAMA_ONBOARD_OK" = true ] && [ "$OLLAMA_SIDECAR_RUNNING" = true ]; then
   info "Running inference battery..."
   BATTERY_LOG="/tmp/nemoclaw-sidecar-e2e-battery-ollama-${FIRST_OLLAMA_MODEL//:/-}.log"
   battery_output=$(bash "$INFERENCE_BATTERY" --json "$FIRST_OLLAMA_MODEL" 2>&1) || true
-  echo "$battery_output" > "$BATTERY_LOG"
+  echo "$battery_output" >"$BATTERY_LOG"
   summary_line=$(echo "$battery_output" | grep '"summary"' | tail -1)
 
   if [ -n "$summary_line" ]; then
@@ -292,9 +310,9 @@ section "Phase 2b: OpenClaw sandbox session validation"
 if [ "$OLLAMA_ONBOARD_OK" = true ] && [ "$OLLAMA_SIDECAR_RUNNING" = true ]; then
   SSH_CONFIG=$(mktemp)
   TIMEOUT_CMD=""
-  command -v timeout > /dev/null 2>&1 && TIMEOUT_CMD="timeout 120"
+  command -v timeout >/dev/null 2>&1 && TIMEOUT_CMD="timeout 120"
 
-  if openshell sandbox ssh-config "$SANDBOX_NAME" > "$SSH_CONFIG" 2>/dev/null; then
+  if openshell sandbox ssh-config "$SANDBOX_NAME" >"$SSH_CONFIG" 2>/dev/null; then
     SSH_CMD="ssh -F $SSH_CONFIG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR openshell-${SANDBOX_NAME}"
 
     # Test 1: Raw curl to inference.local from inside sandbox
@@ -427,13 +445,13 @@ if [ "${#OLLAMA_MODELS[@]}" -gt 1 ] && [ "$OLLAMA_ONBOARD_OK" = true ] && [ "$OL
 
     # Warmup
     info "Warming up model..."
-    docker exec nemoclaw-ollama-default ollama run "$model" "hello" --keepalive 15m > /dev/null 2>&1 || true
+    docker exec nemoclaw-ollama-default ollama run "$model" "hello" --keepalive 15m >/dev/null 2>&1 || true
 
     # Run battery
     info "Running inference battery for $model..."
     BATTERY_LOG="/tmp/nemoclaw-sidecar-e2e-battery-ollama-${model//:/-}.log"
     battery_output=$(bash "$INFERENCE_BATTERY" --json "$model" 2>&1) || true
-    echo "$battery_output" > "$BATTERY_LOG"
+    echo "$battery_output" >"$BATTERY_LOG"
     summary_line=$(echo "$battery_output" | grep '"summary"' | tail -1)
 
     if [ -n "$summary_line" ]; then
@@ -494,12 +512,12 @@ else
     info "Re-onboarding with LM Studio sidecar..."
     INSTALL_LOG="/tmp/nemoclaw-sidecar-e2e-install-lmstudio.log"
     NEMOCLAW_NON_INTERACTIVE=1 \
-    NEMOCLAW_PROVIDER=lmstudio \
-    NEMOCLAW_MODEL="$FIRST_LMSTUDIO_MODEL" \
-    NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME" \
-    NEMOCLAW_RECREATE_SANDBOX=1 \
-    NEMOCLAW_POLICY_MODE=suggested \
-      bash install.sh --non-interactive > "$INSTALL_LOG" 2>&1 &
+      NEMOCLAW_PROVIDER=lmstudio \
+      NEMOCLAW_MODEL="$FIRST_LMSTUDIO_MODEL" \
+      NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME" \
+      NEMOCLAW_RECREATE_SANDBOX=1 \
+      NEMOCLAW_POLICY_MODE=suggested \
+      bash install.sh --non-interactive >"$INSTALL_LOG" 2>&1 &
     install_pid=$!
     tail -f "$INSTALL_LOG" --pid=$install_pid 2>/dev/null &
     tail_pid=$!
@@ -570,7 +588,7 @@ else
         info "Running inference battery for $api_model..."
         BATTERY_LOG="/tmp/nemoclaw-sidecar-e2e-battery-lmstudio-${api_model}.log"
         battery_output=$(bash "$INFERENCE_BATTERY" --json "$api_model" 2>&1) || true
-        echo "$battery_output" > "$BATTERY_LOG"
+        echo "$battery_output" >"$BATTERY_LOG"
         summary_line=$(echo "$battery_output" | grep '"summary"' | tail -1)
 
         if [ -n "$summary_line" ]; then

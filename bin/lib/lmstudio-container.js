@@ -6,9 +6,8 @@
 // approach as ollama-container.js: shared netns means localhost:1234 is
 // reachable from the gateway and its k3s pods.
 
-const { run, runCapture } = require("./runner");
-const { findGatewayContainer } = require("./ollama-container");
-const { shellQuote } = require("./local-inference");
+const { run, runCapture, shellQuote } = require("./runner");
+const { findGatewayContainer, getGatewayIp } = require("./gateway");
 const { spawn } = require("child_process");
 
 const LMSTUDIO_IMAGE = "lmstudio/llmster-preview";
@@ -26,8 +25,7 @@ function startLmstudioContainer(sandboxName) {
   const name = containerName(sandboxName);
   const gateway = findGatewayContainer();
   if (!gateway) {
-    console.error("  Cannot find OpenShell gateway container. Is the gateway running?");
-    process.exit(1);
+    throw new Error("Cannot find OpenShell gateway container. Is the gateway running?");
   }
 
   // Remove any stale container with the same name
@@ -169,7 +167,6 @@ function isRunning(sandboxName) {
 }
 
 function getBaseUrl() {
-  const { getGatewayIp } = require("./ollama-container");
   return `http://${getGatewayIp()}:1234/v1`;
 }
 

@@ -240,7 +240,6 @@ async function promptOllamaModel() {
   return options[index] || options[defaultIndex] || defaultModel;
 }
 
-// Sidecar model picker — queries the running container for installed models.
 // Sidecar model picker — shows installed models from container, then starter
 // models for download. No external API calls — uses container runtime + curated list.
 async function promptSidecarModel(providerKey) {
@@ -1146,9 +1145,9 @@ async function setupInference(sandboxName, model, provider) {
     const baseUrl = getLocalProviderBaseUrl(provider);
     run(
       `openshell provider create --name ${name} --type openai ` +
-      `--credential "OPENAI_API_KEY=${cred}" ` +
+      `--credential "OPENAI_API_KEY" ` +
       `--config "OPENAI_BASE_URL=${baseUrl}" 2>&1 || ` +
-      `openshell provider update ${name} --credential "OPENAI_API_KEY=${cred}" ` +
+      `openshell provider update ${name} --credential "OPENAI_API_KEY" ` +
       `--config "OPENAI_BASE_URL=${baseUrl}" 2>&1 || true`,
       { ignoreError: true }
     );
@@ -1203,9 +1202,9 @@ async function setupInference(sandboxName, model, provider) {
     const baseUrl = getLocalProviderBaseUrl(provider);
     run(
       `openshell provider create --name lmstudio-local --type openai ` +
-      `--credential "OPENAI_API_KEY=lm-studio" ` +
+      `--credential "OPENAI_API_KEY" ` +
       `--config "OPENAI_BASE_URL=${baseUrl}" 2>&1 || ` +
-      `openshell provider update lmstudio-local --credential "OPENAI_API_KEY=lm-studio" ` +
+      `openshell provider update lmstudio-local --credential "OPENAI_API_KEY" ` +
       `--config "OPENAI_BASE_URL=${baseUrl}" 2>&1 || true`,
       { ignoreError: true }
     );

@@ -6,29 +6,16 @@
 // issues (eth0 IP, 0.0.0.0 binding, host.docker.internal) because the
 // container shares localhost with the gateway and its k3s cluster.
 
-const { run, runCapture } = require("./runner");
-const { parseOllamaList, shellQuote } = require("./local-inference");
+const { run, runCapture, shellQuote } = require("./runner");
+const { parseOllamaList } = require("./local-inference");
+const { findGatewayContainer, getGatewayIp } = require("./gateway");
 const { spawn } = require("child_process");
 
 const OLLAMA_IMAGE = "ollama/ollama";
 const CONTAINER_NAME_PREFIX = "nemoclaw-ollama";
-const GATEWAY_CONTAINER_PREFIX = "openshell-cluster-nemoclaw";
 
 function containerName(sandboxName) {
   return `${CONTAINER_NAME_PREFIX}-${sandboxName || "default"}`;
-}
-
-/**
- * Find the running OpenShell gateway container name.
- */
-function findGatewayContainer() {
-  const output = runCapture(
-    `docker ps --filter "name=${GATEWAY_CONTAINER_PREFIX}" --format '{{.Names}}' 2>/dev/null`,
-    { ignoreError: true }
-  );
-  if (!output) return null;
-  // Take the first match
-  return output.split("\n").map((l) => l.trim()).filter(Boolean)[0] || null;
 }
 
 /**
@@ -39,8 +26,7 @@ function startOllamaContainer(sandboxName) {
   const name = containerName(sandboxName);
   const gateway = findGatewayContainer();
   if (!gateway) {
-    console.error("  Cannot find OpenShell gateway container. Is the gateway running?");
-    process.exit(1);
+    throw new Error("Cannot find OpenShell gateway container. Is the gateway running?");
   }
 
   // Remove any stale container with the same name
@@ -159,22 +145,6 @@ function isOllamaContainerRunning(sandboxName) {
   return state === "running";
 }
 
-/**
- * Get the gateway container's IP address on the Docker network.
- * k3s pods reach the sidecar via this IP (not 127.0.0.1, which is the pod's
- * own loopback). The sidecar shares the gateway's network namespace, so
- * the gateway IP + sidecar port routes correctly.
- */
-function getGatewayIp() {
-  const gateway = findGatewayContainer();
-  if (!gateway) return "127.0.0.1"; // fallback
-  const ip = runCapture(
-    `docker inspect ${gateway} --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null`,
-    { ignoreError: true }
-  );
-  return ip || "127.0.0.1";
-}
-
 function getSidecarBaseUrl() {
   return `http://${getGatewayIp()}:11434/v1`;
 }
@@ -211,8 +181,8 @@ module.exports = {
   OLLAMA_IMAGE,
   containerName,
   downloadModelAsync,
-  findGatewayContainer,
-  getGatewayIp,
+  findGatewayContainer, // re-exported from gateway.js for backward compat
+  getGatewayIp,         // re-exported from gateway.js for backward compat
   getSidecarBaseUrl,
   hasModel,
   isOllamaContainerRunning,

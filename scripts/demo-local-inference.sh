@@ -36,7 +36,7 @@ type_cmd() {
   echo ""
   echo -ne "${BOLD}\$ ${NC}"
   local cmd="$1"
-  for (( i=0; i<${#cmd}; i++ )); do
+  for ((i = 0; i < ${#cmd}; i++)); do
     echo -n "${cmd:$i:1}"
     sleep 0.03
   done

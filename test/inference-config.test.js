@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   CLOUD_MODEL_OPTIONS,
+  DEFAULT_LMSTUDIO_MODEL,
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_ROUTE_CREDENTIAL_ENV,
   DEFAULT_ROUTE_PROFILE,
@@ -59,7 +60,7 @@ describe("inference selection config", () => {
   });
 
   it("maps ollama-k3s to the sandbox inference route with sidecar label", () => {
-    assert.deepEqual(getProviderSelectionConfig("ollama-k3s"), {
+    expect(getProviderSelectionConfig("ollama-k3s")).toEqual({
       endpointType: "custom",
       endpointUrl: INFERENCE_ROUTE_URL,
       ncpPartner: null,
@@ -72,25 +73,23 @@ describe("inference selection config", () => {
   });
 
   it("builds a qualified OpenClaw primary model for ollama-k3s", () => {
-    assert.equal(
-      getOpenClawPrimaryModel("ollama-k3s", "nemotron-3-nano:30b"),
+    expect(getOpenClawPrimaryModel("ollama-k3s", "nemotron-3-nano:30b")).toBe(
       `${MANAGED_PROVIDER_ID}/nemotron-3-nano:30b`,
     );
   });
 
   it("uses default Ollama model for ollama-k3s when no model specified", () => {
-    assert.equal(
-      getOpenClawPrimaryModel("ollama-k3s"),
+    expect(getOpenClawPrimaryModel("ollama-k3s")).toBe(
       `${MANAGED_PROVIDER_ID}/${DEFAULT_OLLAMA_MODEL}`,
     );
   });
 
   it("maps lmstudio-k3s to the sandbox inference route with sidecar label", () => {
-    assert.deepEqual(getProviderSelectionConfig("lmstudio-k3s"), {
+    expect(getProviderSelectionConfig("lmstudio-k3s")).toEqual({
       endpointType: "custom",
       endpointUrl: INFERENCE_ROUTE_URL,
       ncpPartner: null,
-      model: DEFAULT_OLLAMA_MODEL,
+      model: DEFAULT_LMSTUDIO_MODEL,
       profile: DEFAULT_ROUTE_PROFILE,
       credentialEnv: DEFAULT_ROUTE_CREDENTIAL_ENV,
       provider: "lmstudio-k3s",
@@ -99,8 +98,7 @@ describe("inference selection config", () => {
   });
 
   it("uses default model for lmstudio-k3s when no model specified", () => {
-    assert.equal(
-      getOpenClawPrimaryModel("lmstudio-k3s"),
+    expect(getOpenClawPrimaryModel("lmstudio-k3s")).toBe(
       `${MANAGED_PROVIDER_ID}/${DEFAULT_OLLAMA_MODEL}`,
     );
   });

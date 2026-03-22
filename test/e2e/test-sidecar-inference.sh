@@ -25,8 +25,14 @@ JSON_MODE=false
 # Parse flags
 while [[ "${1:-}" == --* ]]; do
   case "$1" in
-    --json) JSON_MODE=true; shift ;;
-    *) echo "Unknown flag: $1"; exit 1 ;;
+    --json)
+      JSON_MODE=true
+      shift
+      ;;
+    *)
+      echo "Unknown flag: $1"
+      exit 1
+      ;;
   esac
 done
 
@@ -99,7 +105,7 @@ run_test() {
   local end_time
   end_time=$(date +%s%N)
   local latency_ms
-  latency_ms=$(( (end_time - start_time) / 1000000 ))
+  latency_ms=$(((end_time - start_time) / 1000000))
 
   # Parse response
   local ok=false
@@ -121,7 +127,7 @@ print(f'CONTENT:{content}')
 print(f'REASONING:{reasoning[:2000]}')
 print(f'TOKENS:{tokens}')
 print(f'FINISH:{finish}')
-" 2>/dev/null > /tmp/nemoclaw-test-result; then
+" 2>/dev/null >/tmp/nemoclaw-test-result; then
     content=$(grep "^CONTENT:" /tmp/nemoclaw-test-result | sed 's/^CONTENT://')
     reasoning=$(grep "^REASONING:" /tmp/nemoclaw-test-result | sed 's/^REASONING://')
     tokens=$(grep "^TOKENS:" /tmp/nemoclaw-test-result | sed 's/^TOKENS://')
@@ -185,24 +191,24 @@ print(f'FINISH:{finish}')
 section() { [ "$JSON_MODE" = false ] && echo "$1"; }
 
 section "--- Simple Prompts ---"
-run_test "Math (2+2)"          "What is 2+2?"                                    200 "4"
-run_test "Capital"             "What is the capital of France?"                   200 "Paris"
-run_test "Greeting"            "Hello, how are you?"                              150 ""
+run_test "Math (2+2)" "What is 2+2?" 200 "4"
+run_test "Capital" "What is the capital of France?" 200 "Paris"
+run_test "Greeting" "Hello, how are you?" 150 ""
 
 section ""
 section "--- Reasoning ---"
-run_test "Bat and ball"        "A bat and ball cost 1.10 total. The bat costs 1.00 more than the ball. How much does the ball cost? Think step by step." 500 "0.05"
-run_test "Logic"               "If all roses are flowers and all flowers are plants, are all roses plants? Explain." 300 "yes"
+run_test "Bat and ball" "A bat and ball cost 1.10 total. The bat costs 1.00 more than the ball. How much does the ball cost? Think step by step." 500 "0.05"
+run_test "Logic" "If all roses are flowers and all flowers are plants, are all roses plants? Explain." 300 "yes"
 
 section ""
 section "--- Long-form ---"
-run_test "Photosynthesis"      "Explain photosynthesis in 3 sentences."           300 ""
-run_test "Code generation"     "Write a Python function is_prime(n)"              400 "def"
+run_test "Photosynthesis" "Explain photosynthesis in 3 sentences." 300 ""
+run_test "Code generation" "Write a Python function is_prime(n)" 400 "def"
 
 section ""
 section "--- Performance ---"
-run_test "Short response"      "Say OK"                                           20  ""
-run_test "Medium response"     "List 5 programming languages"                    200  ""
+run_test "Short response" "Say OK" 20 ""
+run_test "Medium response" "List 5 programming languages" 200 ""
 
 rm -f /tmp/nemoclaw-test-result
 
