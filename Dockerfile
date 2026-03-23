@@ -12,7 +12,6 @@ FROM node:22-slim@sha256:4f77a690f2f8946ab16fe1e791a3ac0667ae1c3575c3e4d0d4589e9
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3=3.11.2-1+b1 \
         python3-pip=23.0.1+dfsg-1 \
@@ -58,7 +57,7 @@ RUN mkdir -p /sandbox/.openclaw-data/agents/main/agent \
 
 # Install OpenClaw CLI and PyYAML for blueprint runner (single layer)
 RUN npm install -g openclaw@2026.3.11 \
-    && pip3 install --no-cache-dir --break-system-packages pyyaml==6.0.3
+    && pip3 install --no-cache-dir --break-system-packages "pyyaml==6.0.3"
 
 # Copy built plugin and blueprint into the sandbox
 COPY --from=builder /opt/nemoclaw/dist/ /opt/nemoclaw/dist/
