@@ -1,15 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-"use strict";
+import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 
-const { describe, it } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-
-const BASELINE = path.join(__dirname, "..", "nemoclaw-blueprint", "policies", "openclaw-sandbox.yaml");
-const PRESETS_DIR = path.join(__dirname, "..", "nemoclaw-blueprint", "policies", "presets");
+const BASELINE = path.join(import.meta.dirname, "..", "nemoclaw-blueprint", "policies", "openclaw-sandbox.yaml");
+const PRESETS_DIR = path.join(import.meta.dirname, "..", "nemoclaw-blueprint", "policies", "presets");
 
 describe("binaries restriction: baseline policy", () => {
   it("every network_policies entry has a binaries section", () => {
@@ -41,24 +38,18 @@ describe("binaries restriction: baseline policy", () => {
     }
     if (currentBlock) blocks.push(currentBlock);
 
-    assert.ok(blocks.length > 0, "baseline must have at least one network_policies block");
+    expect(blocks.length).toBeGreaterThan(0);
 
     const violators = blocks.filter(b => !b.lines.some(l => /^\s+binaries:/.test(l)));
 
-    assert.deepEqual(
-      violators.map(b => b.name),
-      [],
-      `Baseline blocks without binaries: restriction:\n` +
-        violators.map(b => `  - ${b.name} (line ${b.startLine})`).join("\n") +
-        `\nEvery network_policies entry must have a binaries: section to prevent data exfiltration (#272).`
-    );
+    expect(violators.map(b => b.name)).toEqual([]);
   });
 });
 
 describe("binaries restriction: policy presets", () => {
   it("every preset YAML has a binaries section", () => {
     const presets = fs.readdirSync(PRESETS_DIR).filter(f => f.endsWith(".yaml"));
-    assert.ok(presets.length > 0, "should find at least one preset");
+    expect(presets.length).toBeGreaterThan(0);
 
     const missing = [];
     for (const file of presets) {
@@ -68,11 +59,6 @@ describe("binaries restriction: policy presets", () => {
       }
     }
 
-    assert.deepEqual(
-      missing,
-      [],
-      `Presets without binaries: restriction: ${missing.join(", ")}\n` +
-        `Every preset must have a binaries: section (#272).`
-    );
+    expect(missing).toEqual([]);
   });
 });
