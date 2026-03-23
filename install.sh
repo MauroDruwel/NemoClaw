@@ -126,7 +126,7 @@ usage() {
   printf "  ${C_DIM}Options:${C_RESET}\n"
   printf "    --non-interactive    Skip prompts (uses env vars / defaults)\n"
   printf "    --version, -v        Print installer version and exit\n"
-  printf "    --help               Show this help message and exit\n\n"
+  printf "    --help, -h           Show this help message and exit\n\n"
   printf "  ${C_DIM}Environment:${C_RESET}\n"
   printf "    NVIDIA_API_KEY                API key (skips credential prompt)\n"
   printf "    NEMOCLAW_NON_INTERACTIVE=1    Same as --non-interactive\n"
