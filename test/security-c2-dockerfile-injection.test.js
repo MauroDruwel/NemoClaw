@@ -9,16 +9,13 @@
 //
 // The fixed pattern reads values via os.environ (data, not source code).
 
-"use strict";
+import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 
-const { describe, it } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
-
-const DOCKERFILE = path.join(__dirname, "..", "Dockerfile");
+const DOCKERFILE = path.join(import.meta.dirname, "..", "Dockerfile");
 
 function runPython(src, env = {}) {
   return spawnSync("python3", ["-c", src], {
@@ -58,15 +55,15 @@ describe("C-2 PoC: vulnerable pattern (ARG interpolation into python3 -c)", () =
   it("benign URL works in the vulnerable pattern (baseline)", () => {
     const src = vulnerableSource("http://127.0.0.1:18789");
     const result = runPython(src);
-    assert.equal(result.status, 0, `python3 exit ${result.status}: ${result.stderr}`);
-    assert.ok(result.stdout.includes("127.0.0.1"));
+    expect(result.status).toBe(0);
+    expect(result.stdout.includes("127.0.0.1")).toBeTruthy();
   });
 
   it("single-quote in URL causes SyntaxError", () => {
     const src = vulnerableSource("http://x'.evil.com");
     const result = runPython(src);
-    assert.notEqual(result.status, 0, "Expected non-zero exit (SyntaxError)");
-    assert.ok(result.stderr.includes("SyntaxError"));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr.includes("SyntaxError")).toBeTruthy();
   });
 
   it("injection payload writes canary file — arbitrary Python executes", () => {
@@ -76,11 +73,8 @@ describe("C-2 PoC: vulnerable pattern (ARG interpolation into python3 -c)", () =
       const src = vulnerableSource(payload);
       runPython(src);
 
-      assert.ok(
-        fs.existsSync(canary),
-        "Canary file must exist — injection payload executed arbitrary Python",
-      );
-      assert.equal(fs.readFileSync(canary, "utf-8"), "PWNED");
+      expect(fs.existsSync(canary)).toBeTruthy();
+      expect(fs.readFileSync(canary, "utf-8")).toBe("PWNED");
     } finally {
       try { fs.unlinkSync(canary); } catch { /* cleanup */ }
     }
@@ -93,14 +87,14 @@ describe("C-2 PoC: vulnerable pattern (ARG interpolation into python3 -c)", () =
 describe("C-2 fix: env var pattern (os.environ) is safe", () => {
   it("benign URL works through env var", () => {
     const result = runPython(fixedSource(), { CHAT_UI_URL: "http://127.0.0.1:18789" });
-    assert.equal(result.status, 0);
-    assert.ok(result.stdout.includes("127.0.0.1"));
+    expect(result.status).toBe(0);
+    expect(result.stdout.includes("127.0.0.1")).toBeTruthy();
   });
 
   it("single-quote in URL is treated as data, not a code boundary", () => {
     const result = runPython(fixedSource(), { CHAT_UI_URL: "http://x'.evil.com" });
-    assert.equal(result.status, 0, `Expected exit 0: ${result.stderr}`);
-    assert.ok(result.stdout.includes("x'.evil.com"));
+    expect(result.status).toBe(0);
+    expect(result.stdout.includes("x'.evil.com")).toBeTruthy();
   });
 
   it("injection payload does NOT execute — URL is inert data", () => {
@@ -109,12 +103,8 @@ describe("C-2 fix: env var pattern (os.environ) is safe", () => {
       const payload = `http://x'; open('${canary}','w').write('PWNED') #`;
       const result = runPython(fixedSource(), { CHAT_UI_URL: payload });
 
-      assert.equal(result.status, 0);
-      assert.equal(
-        fs.existsSync(canary),
-        false,
-        "Canary file must NOT exist — injection payload must not execute",
-      );
+      expect(result.status).toBe(0);
+      expect(fs.existsSync(canary)).toBe(false);
     } finally {
       try { fs.unlinkSync(canary); } catch { /* cleanup */ }
     }
@@ -127,10 +117,7 @@ describe("C-2 fix: env var pattern (os.environ) is safe", () => {
     // the key property is that no code injection occurs. Check stdout or stderr
     // does NOT contain evidence of os.system/subprocess execution.
     const combined = result.stdout + result.stderr;
-    assert.ok(
-      !combined.includes("uid="),
-      "No command execution output should appear — URL is inert data",
-    );
+    expect(!combined.includes("uid=")).toBeTruthy();
   });
 });
 
@@ -140,7 +127,7 @@ describe("C-2 fix: env var pattern (os.environ) is safe", () => {
 describe("C-2 regression: Dockerfile must not interpolate build-args into Python source", () => {
   it("Dockerfile does not interpolate CHAT_UI_URL into a Python string literal", () => {
     const src = fs.readFileSync(DOCKERFILE, "utf-8");
-    const vulnerablePattern = /\$\{CHAT_UI_URL\}/;
+    const vulnerablePattern = /\$(?:\{CHAT_UI_URL\}|CHAT_UI_URL\b)/;
     const lines = src.split("\n");
     let inPythonRunBlock = false;
     for (let i = 0; i < lines.length; i++) {
@@ -149,10 +136,10 @@ describe("C-2 regression: Dockerfile must not interpolate build-args into Python
         inPythonRunBlock = true;
       }
       if (inPythonRunBlock && vulnerablePattern.test(line)) {
-        assert.fail(
+        expect.unreachable(
           `Dockerfile:${i + 1} interpolates CHAT_UI_URL into a Python string literal.\n` +
           `  Line: ${line.trim()}\n` +
-          `  Fix: use os.environ['CHAT_UI_URL'] instead.`,
+          `  Fix: use os.environ['CHAT_UI_URL'] instead.`
         );
       }
       if (inPythonRunBlock && !/\\\s*$/.test(line)) {
@@ -163,7 +150,7 @@ describe("C-2 regression: Dockerfile must not interpolate build-args into Python
 
   it("Dockerfile does not interpolate NEMOCLAW_MODEL into a Python string literal", () => {
     const src = fs.readFileSync(DOCKERFILE, "utf-8");
-    const vulnerablePattern = /\$\{NEMOCLAW_MODEL\}/;
+    const vulnerablePattern = /\$(?:\{NEMOCLAW_MODEL\}|NEMOCLAW_MODEL\b)/;
     const lines = src.split("\n");
     let inPythonRunBlock = false;
     for (let i = 0; i < lines.length; i++) {
@@ -172,10 +159,10 @@ describe("C-2 regression: Dockerfile must not interpolate build-args into Python
         inPythonRunBlock = true;
       }
       if (inPythonRunBlock && vulnerablePattern.test(line)) {
-        assert.fail(
+        expect.unreachable(
           `Dockerfile:${i + 1} interpolates NEMOCLAW_MODEL into a Python string literal.\n` +
           `  Line: ${line.trim()}\n` +
-          `  Fix: use os.environ['NEMOCLAW_MODEL'] instead.`,
+          `  Fix: use os.environ['NEMOCLAW_MODEL'] instead.`
         );
       }
       if (inPythonRunBlock && !/\\\s*$/.test(line)) {
@@ -191,6 +178,11 @@ describe("C-2 regression: Dockerfile must not interpolate build-args into Python
     let inEnvBlock = false;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      // Reset on new build stage — ENV must be in the same stage as the RUN layer
+      if (/^\s*FROM\b/.test(line)) {
+        chatUiUrlPromoted = false;
+        inEnvBlock = false;
+      }
       // Detect start of an ENV instruction
       if (/^\s*ENV\b/.test(line)) {
         inEnvBlock = true;
@@ -205,26 +197,97 @@ describe("C-2 regression: Dockerfile must not interpolate build-args into Python
       }
       // Verify promotion happened before the python3 -c RUN layer
       if (/^\s*RUN\b.*python3\s+-c\b/.test(line)) {
-        assert.ok(
-          chatUiUrlPromoted,
-          `Dockerfile:${i + 1} has a python3 -c RUN layer but CHAT_UI_URL was not promoted via ENV before it`,
-        );
+        expect(chatUiUrlPromoted).toBeTruthy();
         return; // Found the RUN layer and verified — done
       }
     }
-    assert.ok(
-      chatUiUrlPromoted,
-      "Dockerfile must have ENV instruction that promotes CHAT_UI_URL from ARG to env var before the python3 -c RUN layer",
-    );
+    expect(chatUiUrlPromoted).toBeTruthy();
   });
 
   it("Python script uses os.environ to read CHAT_UI_URL", () => {
     const src = fs.readFileSync(DOCKERFILE, "utf-8");
-    const hasEnvRead =
-      src.includes("os.environ['CHAT_UI_URL']") ||
-      src.includes('os.environ["CHAT_UI_URL"]') ||
-      src.includes("os.environ.get('CHAT_UI_URL'") ||
-      src.includes('os.environ.get("CHAT_UI_URL"');
-    assert.ok(hasEnvRead, "Python script must read CHAT_UI_URL via os.environ");
+    const lines = src.split("\n");
+    let inPythonRunBlock = false;
+    let hasEnvRead = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\s*RUN\b.*python3\s+-c\b/.test(line)) {
+        inPythonRunBlock = true;
+      }
+      if (inPythonRunBlock) {
+        if (
+          line.includes("os.environ['CHAT_UI_URL']") ||
+          line.includes('os.environ["CHAT_UI_URL"]') ||
+          line.includes("os.environ.get('CHAT_UI_URL'") ||
+          line.includes('os.environ.get("CHAT_UI_URL"')
+        ) {
+          hasEnvRead = true;
+        }
+      }
+      if (inPythonRunBlock && !/\\\s*$/.test(line)) {
+        inPythonRunBlock = false;
+      }
+    }
+    expect(hasEnvRead).toBeTruthy();
+  });
+
+  it("Dockerfile promotes NEMOCLAW_MODEL to ENV before the RUN layer", () => {
+    const src = fs.readFileSync(DOCKERFILE, "utf-8");
+    const lines = src.split("\n");
+    let nemoModelPromoted = false;
+    let inEnvBlock = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Reset on new build stage — ENV must be in the same stage as the RUN layer
+      if (/^\s*FROM\b/.test(line)) {
+        nemoModelPromoted = false;
+        inEnvBlock = false;
+      }
+      // Detect start of an ENV instruction
+      if (/^\s*ENV\b/.test(line)) {
+        inEnvBlock = true;
+      }
+      // Check if NEMOCLAW_MODEL is set in the current ENV block (same line or continuation)
+      if (inEnvBlock && /NEMOCLAW_MODEL[=\s]/.test(line)) {
+        nemoModelPromoted = true;
+      }
+      // ENV block ends when the line does NOT end with a backslash continuation
+      if (inEnvBlock && !/\\\s*$/.test(line)) {
+        inEnvBlock = false;
+      }
+      // Verify promotion happened before the python3 -c RUN layer
+      if (/^\s*RUN\b.*python3\s+-c\b/.test(line)) {
+        expect(nemoModelPromoted).toBeTruthy();
+        return; // Found the RUN layer and verified — done
+      }
+    }
+    expect(nemoModelPromoted).toBeTruthy();
+  });
+
+  it("Python script uses os.environ to read NEMOCLAW_MODEL", () => {
+    const src = fs.readFileSync(DOCKERFILE, "utf-8");
+    const lines = src.split("\n");
+    let inPythonRunBlock = false;
+    let hasEnvRead = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\s*RUN\b.*python3\s+-c\b/.test(line)) {
+        inPythonRunBlock = true;
+      }
+      if (inPythonRunBlock) {
+        if (
+          line.includes("os.environ['NEMOCLAW_MODEL']") ||
+          line.includes('os.environ["NEMOCLAW_MODEL"]') ||
+          line.includes("os.environ.get('NEMOCLAW_MODEL'") ||
+          line.includes('os.environ.get("NEMOCLAW_MODEL"')
+        ) {
+          hasEnvRead = true;
+        }
+      }
+      if (inPythonRunBlock && !/\\\s*$/.test(line)) {
+        inPythonRunBlock = false;
+      }
+    }
+    expect(hasEnvRead).toBeTruthy();
   });
 });
