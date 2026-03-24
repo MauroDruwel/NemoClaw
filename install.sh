@@ -427,7 +427,7 @@ fix_npm_permissions() {
   local path_line='export PATH="$HOME/.npm-global/bin:$PATH"'
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [[ -f "$rc" ]] && ! grep -q ".npm-global" "$rc"; then
-      printf '\n# Added by NemoClaw installer\n%s\n' "$path_line" >> "$rc"
+      printf '\n# Added by NemoClaw installer\n%s\n' "$path_line" >>"$rc"
     fi
   done
 
