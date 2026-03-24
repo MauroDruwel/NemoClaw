@@ -73,15 +73,16 @@ function exitWithSpawnResult(result) {
 
 async function onboard(args) {
   const { onboard: runOnboard } = require("./lib/onboard");
-  const allowedArgs = new Set(["--non-interactive"]);
+  const allowedArgs = new Set(["--non-interactive", "--resume"]);
   const unknownArgs = args.filter((arg) => !allowedArgs.has(arg));
   if (unknownArgs.length > 0) {
     console.error(`  Unknown onboard option(s): ${unknownArgs.join(", ")}`);
-    console.error("  Usage: nemoclaw onboard [--non-interactive]");
+    console.error("  Usage: nemoclaw onboard [--non-interactive] [--resume]");
     process.exit(1);
   }
   const nonInteractive = args.includes("--non-interactive");
-  await runOnboard({ nonInteractive });
+  const resume = args.includes("--resume");
+  await runOnboard({ nonInteractive, resume });
 }
 
 async function setup() {

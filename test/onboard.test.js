@@ -8,9 +8,18 @@ import path from "node:path";
 
 import {
   buildSandboxConfigSyncScript,
+  getGatewayReuseState,
+  getRequestedModelHint,
+  getRequestedProviderHint,
+  getRequestedSandboxNameHint,
+  getResumeConfigConflicts,
+  getResumeSandboxConflict,
+  getSandboxStateFromOutputs,
+  shouldIncludeBuildContextPath,
   getFutureShellPathHint,
   getInstalledOpenshellVersion,
   getStableGatewayImageRef,
+  isGatewayHealthy,
   writeSandboxConfigSyncFile,
 } from "../bin/lib/onboard";
 
@@ -46,6 +55,196 @@ describe("onboard helpers", () => {
     expect(getStableGatewayImageRef("openshell 0.0.12")).toBe("ghcr.io/nvidia/openshell/cluster:0.0.12");
     expect(getStableGatewayImageRef("openshell 0.0.13-dev.8+gbbcaed2ea")).toBe("ghcr.io/nvidia/openshell/cluster:0.0.13");
     expect(getStableGatewayImageRef("bogus")).toBe(null);
+  });
+
+  it("treats the gateway as healthy only when nemoclaw is running and connected", () => {
+    expect(
+      isGatewayHealthy(
+        "Gateway status: Connected",
+        "Gateway Info\n\n  Gateway: nemoclaw\n  Gateway endpoint: https://127.0.0.1:8080"
+      )
+    ).toBe(true);
+    expect(
+      isGatewayHealthy(
+        "\u001b[1mServer Status\u001b[0m\n\n  Gateway: openshell\n  Server: https://127.0.0.1:8080\n  Status: Connected",
+        "Error:   × No gateway metadata found for 'nemoclaw'.",
+        "Gateway Info\n\n  Gateway: openshell\n  Gateway endpoint: https://127.0.0.1:8080"
+      )
+    ).toBe(true);
+    expect(isGatewayHealthy("Gateway status: Disconnected", "Gateway: nemoclaw")).toBe(false);
+    expect(isGatewayHealthy("Gateway status: Connected", "Gateway: something-else")).toBe(false);
+  });
+
+  it("classifies gateway reuse states conservatively", () => {
+    expect(
+      getGatewayReuseState(
+        "Gateway status: Connected",
+        "Gateway Info\n\n  Gateway: nemoclaw\n  Gateway endpoint: https://127.0.0.1:8080"
+      )
+    ).toBe("healthy");
+    expect(
+      getGatewayReuseState(
+        "Gateway status: Connected",
+        "Error:   × No gateway metadata found for 'nemoclaw'.",
+        "Gateway Info\n\n  Gateway: openshell\n  Gateway endpoint: https://127.0.0.1:8080"
+      )
+    ).toBe("healthy");
+    expect(
+      getGatewayReuseState(
+        "Gateway status: Disconnected",
+        "Gateway Info\n\n  Gateway: nemoclaw\n  Gateway endpoint: https://127.0.0.1:8080"
+      )
+    ).toBe("stale");
+    expect(
+      getGatewayReuseState(
+        "Gateway status: Connected",
+        "",
+        "Gateway Info\n\n  Gateway: openshell\n  Gateway endpoint: https://127.0.0.1:8080"
+      )
+    ).toBe("healthy");
+    expect(getGatewayReuseState("", "")).toBe("missing");
+  });
+
+  it("classifies sandbox reuse states from openshell outputs", () => {
+    expect(
+      getSandboxStateFromOutputs(
+        "my-assistant",
+        "Name: my-assistant",
+        "my-assistant   Ready   2m ago"
+      )
+    ).toBe("ready");
+    expect(
+      getSandboxStateFromOutputs(
+        "my-assistant",
+        "Name: my-assistant",
+        "my-assistant   NotReady   init failed"
+      )
+    ).toBe("not_ready");
+    expect(getSandboxStateFromOutputs("my-assistant", "", "")).toBe("missing");
+  });
+
+  it("filters local-only artifacts out of the sandbox build context", () => {
+    expect(
+      shouldIncludeBuildContextPath(
+        "/repo/nemoclaw-blueprint",
+        "/repo/nemoclaw-blueprint/orchestrator/main.py"
+      )
+    ).toBe(true);
+    expect(
+      shouldIncludeBuildContextPath(
+        "/repo/nemoclaw-blueprint",
+        "/repo/nemoclaw-blueprint/.venv/bin/python"
+      )
+    ).toBe(false);
+    expect(
+      shouldIncludeBuildContextPath(
+        "/repo/nemoclaw-blueprint",
+        "/repo/nemoclaw-blueprint/.ruff_cache/cache"
+      )
+    ).toBe(false);
+    expect(
+      shouldIncludeBuildContextPath(
+        "/repo/nemoclaw-blueprint",
+        "/repo/nemoclaw-blueprint/._pyvenv.cfg"
+      )
+    ).toBe(false);
+  });
+
+  it("normalizes sandbox name hints from the environment", () => {
+    const previous = process.env.NEMOCLAW_SANDBOX_NAME;
+    process.env.NEMOCLAW_SANDBOX_NAME = "  My-Assistant  ";
+    try {
+      expect(getRequestedSandboxNameHint()).toBe("my-assistant");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NEMOCLAW_SANDBOX_NAME;
+      } else {
+        process.env.NEMOCLAW_SANDBOX_NAME = previous;
+      }
+    }
+  });
+
+  it("detects resume conflicts when a different sandbox is requested", () => {
+    const previous = process.env.NEMOCLAW_SANDBOX_NAME;
+    process.env.NEMOCLAW_SANDBOX_NAME = "other-sandbox";
+    try {
+      expect(getResumeSandboxConflict({ sandboxName: "my-assistant" })).toEqual({
+        requestedSandboxName: "other-sandbox",
+        recordedSandboxName: "my-assistant",
+      });
+      expect(getResumeSandboxConflict({ sandboxName: "other-sandbox" })).toBe(null);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NEMOCLAW_SANDBOX_NAME;
+      } else {
+        process.env.NEMOCLAW_SANDBOX_NAME = previous;
+      }
+    }
+  });
+
+  it("returns provider and model hints only for non-interactive runs", () => {
+    const previousProvider = process.env.NEMOCLAW_PROVIDER;
+    const previousModel = process.env.NEMOCLAW_MODEL;
+    process.env.NEMOCLAW_PROVIDER = "cloud";
+    process.env.NEMOCLAW_MODEL = "nvidia/test-model";
+    try {
+      expect(getRequestedProviderHint(true)).toBe("cloud");
+      expect(getRequestedModelHint(true)).toBe("nvidia/test-model");
+      expect(getRequestedProviderHint(false)).toBe(null);
+      expect(getRequestedModelHint(false)).toBe(null);
+    } finally {
+      if (previousProvider === undefined) {
+        delete process.env.NEMOCLAW_PROVIDER;
+      } else {
+        process.env.NEMOCLAW_PROVIDER = previousProvider;
+      }
+      if (previousModel === undefined) {
+        delete process.env.NEMOCLAW_MODEL;
+      } else {
+        process.env.NEMOCLAW_MODEL = previousModel;
+      }
+    }
+  });
+
+  it("detects resume conflicts for explicit provider and model changes", () => {
+    const previousProvider = process.env.NEMOCLAW_PROVIDER;
+    const previousModel = process.env.NEMOCLAW_MODEL;
+    process.env.NEMOCLAW_PROVIDER = "cloud";
+    process.env.NEMOCLAW_MODEL = "nvidia/other-model";
+    try {
+      expect(
+        getResumeConfigConflicts(
+          {
+            sandboxName: "my-assistant",
+            provider: "nvidia-nim",
+            model: "nvidia/nemotron-3-super-120b-a12b",
+          },
+          { nonInteractive: true }
+        )
+      ).toEqual([
+        {
+          field: "provider",
+          requested: "cloud",
+          recorded: "nvidia-nim",
+        },
+        {
+          field: "model",
+          requested: "nvidia/other-model",
+          recorded: "nvidia/nemotron-3-super-120b-a12b",
+        },
+      ]);
+    } finally {
+      if (previousProvider === undefined) {
+        delete process.env.NEMOCLAW_PROVIDER;
+      } else {
+        process.env.NEMOCLAW_PROVIDER = previousProvider;
+      }
+      if (previousModel === undefined) {
+        delete process.env.NEMOCLAW_MODEL;
+      } else {
+        process.env.NEMOCLAW_MODEL = previousModel;
+      }
+    }
   });
 
   it("returns a future-shell PATH hint for user-local openshell installs", () => {

@@ -31,6 +31,7 @@ const {
 const { prompt, ensureApiKey, getCredential } = require("./credentials");
 const registry = require("./registry");
 const nim = require("./nim");
+const onboardSession = require("./onboard-session");
 const policies = require("./policies");
 const { checkPortAvailable } = require("./preflight");
 const EXPERIMENTAL = process.env.NEMOCLAW_EXPERIMENTAL === "1";
@@ -84,6 +85,57 @@ function isSandboxReady(output, sandboxName) {
  */
 function hasStaleGateway(gwInfoOutput) {
   return typeof gwInfoOutput === "string" && gwInfoOutput.length > 0 && gwInfoOutput.includes("nemoclaw");
+}
+
+function isGatewayHealthy(statusOutput = "", gwInfoOutput = "", activeGatewayInfoOutput = "") {
+  const connected = typeof statusOutput === "string" && statusOutput.includes("Connected");
+  if (!connected) return false;
+
+  const namedGatewayKnown = hasStaleGateway(gwInfoOutput);
+  const activeGatewayKnown =
+    typeof activeGatewayInfoOutput === "string" &&
+    activeGatewayInfoOutput.includes("Gateway endpoint:") &&
+    !activeGatewayInfoOutput.includes("No gateway metadata found");
+
+  return namedGatewayKnown || activeGatewayKnown;
+}
+
+function getGatewayReuseState(statusOutput = "", gwInfoOutput = "", activeGatewayInfoOutput = "") {
+  if (isGatewayHealthy(statusOutput, gwInfoOutput, activeGatewayInfoOutput)) {
+    return "healthy";
+  }
+  if (hasStaleGateway(gwInfoOutput)) {
+    return "stale";
+  }
+  if (
+    typeof activeGatewayInfoOutput === "string" &&
+    activeGatewayInfoOutput.includes("Gateway endpoint:") &&
+    !activeGatewayInfoOutput.includes("No gateway metadata found")
+  ) {
+    return "active-unnamed";
+  }
+  return "missing";
+}
+
+function getSandboxStateFromOutputs(sandboxName, getOutput = "", listOutput = "") {
+  if (!sandboxName) return "missing";
+  if (!getOutput) return "missing";
+  return isSandboxReady(listOutput, sandboxName) ? "ready" : "not_ready";
+}
+
+function getSandboxReuseState(sandboxName) {
+  if (!sandboxName) return "missing";
+  const getOutput = runCapture(`openshell sandbox get "${sandboxName}" 2>/dev/null`, { ignoreError: true });
+  const listOutput = runCapture("openshell sandbox list 2>&1", { ignoreError: true });
+  return getSandboxStateFromOutputs(sandboxName, getOutput, listOutput);
+}
+
+function repairRecordedSandbox(sandboxName) {
+  if (!sandboxName) return;
+  note(`  [resume] Cleaning up recorded sandbox '${sandboxName}' before recreating it.`);
+  run(`openshell forward stop 18789 2>/dev/null || true`, { ignoreError: true });
+  run(`openshell sandbox delete "${sandboxName}" 2>/dev/null || true`, { ignoreError: true });
+  registry.removeSandbox(sandboxName);
 }
 
 function streamSandboxCreate(command) {
@@ -197,6 +249,36 @@ function writeSandboxConfigSyncFile(script, tmpDir = os.tmpdir(), now = Date.now
   return scriptFile;
 }
 
+function shouldIncludeBuildContextPath(sourceRoot, candidatePath) {
+  const relative = path.relative(sourceRoot, candidatePath);
+  if (!relative || relative === "") return true;
+
+  const segments = relative.split(path.sep);
+  const basename = path.basename(candidatePath);
+  const excludedSegments = new Set([
+    ".venv",
+    ".ruff_cache",
+    ".pytest_cache",
+    ".mypy_cache",
+    "__pycache__",
+    "node_modules",
+    ".git",
+  ]);
+
+  if (basename === ".DS_Store" || basename.startsWith("._")) {
+    return false;
+  }
+
+  return !segments.some((segment) => excludedSegments.has(segment));
+}
+
+function copyBuildContextDir(sourceDir, destinationDir) {
+  fs.cpSync(sourceDir, destinationDir, {
+    recursive: true,
+    filter: (candidatePath) => shouldIncludeBuildContextPath(sourceDir, candidatePath),
+  });
+}
+
 async function promptCloudModel() {
   console.log("");
   console.log("  Cloud models:");
@@ -225,6 +307,67 @@ async function promptOllamaModel() {
   const choice = await prompt(`  Choose model [${defaultIndex + 1}]: `);
   const index = parseInt(choice || String(defaultIndex + 1), 10) - 1;
   return options[index] || options[defaultIndex] || defaultModel;
+}
+
+function getRequestedSandboxNameHint() {
+  const raw = process.env.NEMOCLAW_SANDBOX_NAME;
+  if (typeof raw !== "string") return null;
+  const normalized = raw.trim().toLowerCase();
+  return normalized || null;
+}
+
+function getResumeSandboxConflict(session) {
+  const requestedSandboxName = getRequestedSandboxNameHint();
+  if (!requestedSandboxName || !session?.sandboxName) {
+    return null;
+  }
+  return requestedSandboxName !== session.sandboxName
+    ? { requestedSandboxName, recordedSandboxName: session.sandboxName }
+    : null;
+}
+
+function getRequestedProviderHint(nonInteractive = isNonInteractive()) {
+  return nonInteractive ? getNonInteractiveProvider() : null;
+}
+
+function getRequestedModelHint(nonInteractive = isNonInteractive()) {
+  if (!nonInteractive) return null;
+  const providerKey = getRequestedProviderHint(nonInteractive) || "cloud";
+  return getNonInteractiveModel(providerKey);
+}
+
+function getResumeConfigConflicts(session, opts = {}) {
+  const conflicts = [];
+  const nonInteractive = opts.nonInteractive ?? isNonInteractive();
+
+  const sandboxConflict = getResumeSandboxConflict(session);
+  if (sandboxConflict) {
+    conflicts.push({
+      field: "sandbox",
+      requested: sandboxConflict.requestedSandboxName,
+      recorded: sandboxConflict.recordedSandboxName,
+    });
+  }
+
+  const requestedProvider = getRequestedProviderHint(nonInteractive);
+  if (requestedProvider && session?.provider && requestedProvider !== session.provider) {
+    conflicts.push({
+      field: "provider",
+      requested: requestedProvider,
+      recorded: session.provider,
+    });
+  }
+
+  const requestedModel = getRequestedModelHint(nonInteractive);
+  if (requestedModel && session?.model && requestedModel !== session.model) {
+    conflicts.push({
+      field: "model",
+      requested: requestedModel,
+      recorded: session.model,
+    });
+  }
+
+  return conflicts;
 }
 
 function isDockerRunning() {
@@ -538,10 +681,9 @@ async function createSandbox(gpu) {
   const os = require("os");
   const buildCtx = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-build-"));
   fs.copyFileSync(path.join(ROOT, "Dockerfile"), path.join(buildCtx, "Dockerfile"));
-  run(`cp -r "${path.join(ROOT, "nemoclaw")}" "${buildCtx}/nemoclaw"`);
-  run(`cp -r "${path.join(ROOT, "nemoclaw-blueprint")}" "${buildCtx}/nemoclaw-blueprint"`);
-  run(`cp -r "${path.join(ROOT, "scripts")}" "${buildCtx}/scripts"`);
-  run(`rm -rf "${buildCtx}/nemoclaw/node_modules"`, { ignoreError: true });
+  copyBuildContextDir(path.join(ROOT, "nemoclaw"), path.join(buildCtx, "nemoclaw"));
+  copyBuildContextDir(path.join(ROOT, "nemoclaw-blueprint"), path.join(buildCtx, "nemoclaw-blueprint"));
+  copyBuildContextDir(path.join(ROOT, "scripts"), path.join(buildCtx, "scripts"));
 
   // Create sandbox (use -- echo to avoid dropping into interactive shell)
   // Pass the base policy so sandbox starts in proxy mode (required for policy updates later)
@@ -1074,34 +1216,209 @@ function printDashboard(sandboxName, model, provider) {
   console.log("");
 }
 
+function startRecordedStep(stepName, updates = {}) {
+  onboardSession.markStepStarted(stepName);
+  if (Object.keys(updates).length > 0) {
+    onboardSession.updateSession((session) => {
+      if (typeof updates.sandboxName === "string") session.sandboxName = updates.sandboxName;
+      if (typeof updates.provider === "string") session.provider = updates.provider;
+      if (typeof updates.model === "string") session.model = updates.model;
+      return session;
+    });
+  }
+}
+
+function resumeStepMessage(stepName, detail) {
+  console.log(`  [resume] Skipping ${stepName}${detail ? ` (${detail})` : ""}`);
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 async function onboard(opts = {}) {
   NON_INTERACTIVE = opts.nonInteractive || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
+  const resume = opts.resume === true;
+  let session = null;
+  if (resume) {
+    session = onboardSession.loadSession();
+    if (!session || session.resumable === false) {
+      console.error("  No resumable onboarding session was found.");
+      console.error("  Run: nemoclaw onboard");
+      process.exit(1);
+    }
+    const resumeConflicts = getResumeConfigConflicts(session, { nonInteractive: isNonInteractive() });
+    if (resumeConflicts.length > 0) {
+      for (const conflict of resumeConflicts) {
+        if (conflict.field === "sandbox") {
+          console.error(
+            `  Resumable state belongs to sandbox '${conflict.recorded}', not '${conflict.requested}'.`
+          );
+        } else {
+          console.error(
+            `  Resumable state recorded ${conflict.field} '${conflict.recorded}', not '${conflict.requested}'.`
+          );
+        }
+      }
+      console.error("  Run: nemoclaw onboard              # start a fresh onboarding session");
+      console.error("  Or rerun with the original settings to continue that session.");
+      process.exit(1);
+    }
+    onboardSession.updateSession((current) => {
+      current.mode = isNonInteractive() ? "non-interactive" : "interactive";
+      current.failure = null;
+      current.status = "in_progress";
+      return current;
+    });
+    session = onboardSession.loadSession();
+  } else {
+    session = onboardSession.saveSession(
+      onboardSession.createSession({
+        mode: isNonInteractive() ? "non-interactive" : "interactive",
+        metadata: { gatewayName: "nemoclaw" },
+      })
+    );
+  }
+
+  let completed = false;
+  process.once("exit", (code) => {
+    if (!completed && code !== 0) {
+      const current = onboardSession.loadSession();
+      const failedStep = current?.lastStepStarted;
+      if (failedStep) {
+        onboardSession.markStepFailed(failedStep, "Onboarding exited before the step completed.");
+      }
+    }
+  });
 
   console.log("");
   console.log("  NemoClaw Onboarding");
   if (isNonInteractive()) note("  (non-interactive mode)");
+  if (resume) note("  (resume mode)");
   console.log("  ===================");
 
-  const gpu = await preflight();
-  await startGateway(gpu);
-  const sandboxName = await createSandbox(gpu);
-  const { model, provider } = await setupNim(sandboxName, gpu);
+  let gpu = null;
+  let preflightCompleted = false;
+  const resumePreflight = resume && session?.steps?.preflight?.status === "complete";
+  if (resumePreflight) {
+    resumeStepMessage("preflight", "cached");
+    gpu = nim.detectGpu();
+    preflightCompleted = true;
+  } else {
+    startRecordedStep("preflight");
+    gpu = await preflight();
+    onboardSession.markStepComplete("preflight");
+    preflightCompleted = true;
+  }
+
+  const gatewayStatus = runCapture("openshell status 2>&1", { ignoreError: true });
+  const gatewayInfo = runCapture("openshell gateway info -g nemoclaw 2>/dev/null", { ignoreError: true });
+  const activeGatewayInfo = runCapture("openshell gateway info 2>&1", { ignoreError: true });
+  const gatewayReuseState = getGatewayReuseState(gatewayStatus, gatewayInfo, activeGatewayInfo);
+  const resumeGateway =
+    resume &&
+    session?.steps?.gateway?.status === "complete" &&
+    gatewayReuseState === "healthy";
+  if (resumeGateway) {
+    resumeStepMessage("gateway", "running");
+  } else {
+    if (resume && session?.steps?.gateway?.status === "complete") {
+      if (gatewayReuseState === "active-unnamed") {
+        note("  [resume] Gateway is active but named metadata is missing; recreating it safely.");
+      } else if (gatewayReuseState === "stale") {
+        note("  [resume] Recorded gateway is unhealthy; recreating it.");
+      } else {
+        note("  [resume] Recorded gateway state is unavailable; recreating it.");
+      }
+    }
+    startRecordedStep("gateway");
+    if (!preflightCompleted) {
+      gpu = await preflight();
+      preflightCompleted = true;
+    }
+    await startGateway(gpu);
+    onboardSession.markStepComplete("gateway");
+  }
+
+  let sandboxName = session?.sandboxName || null;
+  const sandboxReuseState = getSandboxReuseState(sandboxName);
+  const resumeSandbox = resume && session?.steps?.sandbox?.status === "complete" && sandboxReuseState === "ready";
+  if (resumeSandbox) {
+    resumeStepMessage("sandbox", sandboxName);
+  } else {
+    if (resume && session?.steps?.sandbox?.status === "complete") {
+      if (sandboxReuseState === "not_ready") {
+        note(`  [resume] Recorded sandbox '${sandboxName}' exists but is not ready; recreating it.`);
+        repairRecordedSandbox(sandboxName);
+      } else {
+        note("  [resume] Recorded sandbox state is unavailable; recreating it.");
+        if (sandboxName) {
+          registry.removeSandbox(sandboxName);
+        }
+      }
+    }
+    startRecordedStep("sandbox");
+    if (!preflightCompleted) {
+      gpu = await preflight();
+      preflightCompleted = true;
+    }
+    sandboxName = await createSandbox(gpu);
+    onboardSession.markStepComplete("sandbox", { sandboxName });
+  }
+
+  let model = session?.model || null;
+  let provider = session?.provider || null;
+  const resumeProviderSelection =
+    resume &&
+    session?.steps?.provider_selection?.status === "complete" &&
+    typeof provider === "string" &&
+    typeof model === "string";
+  if (resumeProviderSelection) {
+    resumeStepMessage("provider selection", `${provider} / ${model}`);
+  } else {
+    startRecordedStep("provider_selection", { sandboxName });
+    const selection = await setupNim(sandboxName, gpu);
+    model = selection.model;
+    provider = selection.provider;
+    onboardSession.markStepComplete("provider_selection", { sandboxName, provider, model });
+  }
+
+  startRecordedStep("inference", { sandboxName, provider, model });
   await setupInference(sandboxName, model, provider);
+  onboardSession.markStepComplete("inference", { sandboxName, provider, model });
+
+  startRecordedStep("openclaw", { sandboxName, provider, model });
   await setupOpenclaw(sandboxName, model, provider);
+  onboardSession.markStepComplete("openclaw", { sandboxName, provider, model });
+
+  startRecordedStep("policies", { sandboxName, provider, model });
   await setupPolicies(sandboxName);
+  onboardSession.markStepComplete("policies", { sandboxName, provider, model });
+
+  onboardSession.completeSession({ sandboxName, provider, model });
+  completed = true;
   printDashboard(sandboxName, model, provider);
 }
 
 module.exports = {
   buildSandboxConfigSyncScript,
+  copyBuildContextDir,
   getFutureShellPathHint,
+  getGatewayReuseState,
   getInstalledOpenshellVersion,
+  getRequestedModelHint,
+  getRequestedProviderHint,
   getStableGatewayImageRef,
+  getResumeConfigConflicts,
+  isGatewayHealthy,
   hasStaleGateway,
+  getRequestedSandboxNameHint,
+  getResumeSandboxConflict,
+  getSandboxReuseState,
+  getSandboxStateFromOutputs,
   isSandboxReady,
   onboard,
+  onboardSession,
+  repairRecordedSandbox,
+  shouldIncludeBuildContextPath,
   setupNim,
   writeSandboxConfigSyncFile,
 };

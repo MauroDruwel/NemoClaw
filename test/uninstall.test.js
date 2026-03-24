@@ -76,6 +76,29 @@ describe("uninstall helpers", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-uninstall-shim-"));
     const shimDir = path.join(tmp, ".local", "bin");
     const shimPath = path.join(shimDir, "nemoclaw");
+    const targetPath = path.join(tmp, "prefix", "bin", "nemoclaw");
+    fs.mkdirSync(shimDir, { recursive: true });
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, "#!/usr/bin/env bash\n", { mode: 0o755 });
+    fs.symlinkSync(targetPath, shimPath);
+
+    const result = spawnSync(
+      "bash",
+      ["-lc", `HOME="${tmp}" source "${UNINSTALL_SCRIPT}"; remove_nemoclaw_cli`],
+      {
+        cwd: path.join(import.meta.dirname, ".."),
+        encoding: "utf-8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(shimPath)).toBe(false);
+  });
+
+  it("preserves a user-managed nemoclaw file in the shim directory", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-uninstall-preserve-"));
+    const shimDir = path.join(tmp, ".local", "bin");
+    const shimPath = path.join(shimDir, "nemoclaw");
     fs.mkdirSync(shimDir, { recursive: true });
     fs.writeFileSync(shimPath, "#!/usr/bin/env bash\n", { mode: 0o755 });
 
@@ -89,6 +112,28 @@ describe("uninstall helpers", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(fs.existsSync(shimPath)).toBe(false);
+    expect(fs.existsSync(shimPath)).toBe(true);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/not an installer-managed shim/);
+  });
+
+  it("removes the onboard session file as part of NemoClaw state cleanup", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-uninstall-session-"));
+    const stateDir = path.join(tmp, ".nemoclaw");
+    const sessionPath = path.join(stateDir, "onboard-session.json");
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(sessionPath, JSON.stringify({ status: "complete" }));
+
+    const result = spawnSync(
+      "bash",
+      ["-lc", `HOME="${tmp}" source "${UNINSTALL_SCRIPT}"; remove_nemoclaw_state`],
+      {
+        cwd: path.join(import.meta.dirname, ".."),
+        encoding: "utf-8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(sessionPath)).toBe(false);
+    expect(fs.existsSync(stateDir)).toBe(false);
   });
 });
