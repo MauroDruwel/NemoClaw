@@ -115,10 +115,26 @@ function parseOllamaList(output) {
     .filter(Boolean);
 }
 
+function parseOllamaTags(output) {
+  try {
+    const parsed = JSON.parse(String(output || ""));
+    return Array.isArray(parsed?.models)
+      ? parsed.models.map((model) => model && model.name).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function getOllamaModelOptions(runCapture) {
-  const output = runCapture("ollama list 2>/dev/null", { ignoreError: true });
-  const parsed = parseOllamaList(output);
-  return parsed;
+  const tagsOutput = runCapture("curl -sf http://localhost:11434/api/tags 2>/dev/null", { ignoreError: true });
+  const tagsParsed = parseOllamaTags(tagsOutput);
+  if (tagsParsed.length > 0) {
+    return tagsParsed;
+  }
+
+  const listOutput = runCapture("ollama list 2>/dev/null", { ignoreError: true });
+  return parseOllamaList(listOutput);
 }
 
 function getBootstrapOllamaModelOptions(gpu) {
@@ -195,6 +211,7 @@ module.exports = {
   getLocalProviderContainerReachabilityCheck,
   getLocalProviderHealthCheck,
   getOllamaModelOptions,
+  parseOllamaTags,
   getOllamaProbeCommand,
   getOllamaWarmupCommand,
   parseOllamaList,
