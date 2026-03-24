@@ -632,9 +632,7 @@ export function createSnapshotBundle(
       });
     }
 
-    const blueprintDigest = options.blueprintPath
-      ? computeFileDigest(options.blueprintPath)
-      : null;
+    const blueprintDigest = options.blueprintPath ? computeFileDigest(options.blueprintPath) : null;
 
     const manifest: SnapshotManifest = {
       version: SNAPSHOT_VERSION,
@@ -779,9 +777,7 @@ export function restoreSnapshotToHost(
       logger.error("Snapshot manifest has invalid blueprintDigest. Refusing to restore.");
       return false;
     }
-    const currentDigest = options?.blueprintPath
-      ? computeFileDigest(options.blueprintPath)
-      : null;
+    const currentDigest = options?.blueprintPath ? computeFileDigest(options.blueprintPath) : null;
     if (!currentDigest) {
       logger.error(
         "Snapshot contains a blueprintDigest but no blueprint is available for verification. " +

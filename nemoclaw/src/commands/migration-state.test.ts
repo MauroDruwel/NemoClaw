@@ -568,9 +568,7 @@ describe("commands/migration-state", () => {
       }
 
       // auth-profiles.json should not exist anywhere in the snapshot
-      const snapshotKeys = [...store.keys()].filter((k) =>
-        k.startsWith(bundle.snapshotDir),
-      );
+      const snapshotKeys = [...store.keys()].filter((k) => k.startsWith(bundle.snapshotDir));
       const authProfileKeys = snapshotKeys.filter((k) => k.endsWith("auth-profiles.json"));
       expect(authProfileKeys).toHaveLength(0);
 
@@ -610,9 +608,7 @@ describe("commands/migration-state", () => {
       }
 
       // Read the sandbox-bundle openclaw.json
-      const sandboxConfigEntry = store.get(
-        bundle.preparedStateDir + "/openclaw.json",
-      );
+      const sandboxConfigEntry = store.get(bundle.preparedStateDir + "/openclaw.json");
       if (!sandboxConfigEntry || !sandboxConfigEntry.content) {
         expect.unreachable("sandbox config entry should exist with content");
         return;
@@ -1145,9 +1141,7 @@ describe("commands/migration-state", () => {
           blueprintPath: "/test/blueprint.yaml",
         });
         expect(result).toBe(false);
-        expect(logger.error).toHaveBeenCalledWith(
-          expect.stringContaining("digest mismatch"),
-        );
+        expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("digest mismatch"));
       } finally {
         if (origHome === undefined) {
           delete process.env.HOME;
