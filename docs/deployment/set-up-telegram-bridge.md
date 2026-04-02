@@ -90,5 +90,6 @@ $ nemoclaw stop
 
 ## Related Topics
 
+- [Set Up a Cloudflare Tunnel](set-up-cloudflare-tunnel.md) to expose the dashboard on a stable custom domain.
 - [Deploy NemoClaw to a Remote GPU Instance](deploy-to-remote-gpu.md) for remote deployment with Telegram support.
 - [Commands](../reference/commands.md) for the full `start` and `stop` command reference.

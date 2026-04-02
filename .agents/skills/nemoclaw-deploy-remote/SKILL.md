@@ -106,6 +106,16 @@ The `start` command launches the following services:
 
 The Telegram bridge starts only when the `TELEGRAM_BOT_TOKEN` environment variable is set.
 
+By default, the tunnel assigns a random `*.trycloudflare.com` URL on every start (quick tunnel).
+To use a stable custom domain, set `CLOUDFLARE_TUNNEL_TOKEN` (named tunnel token from the Cloudflare Zero Trust dashboard)
+and optionally `CLOUDFLARE_TUNNEL_HOSTNAME` (your custom domain, for display only):
+
+```console
+$ export CLOUDFLARE_TUNNEL_TOKEN=eyJ...
+$ export CLOUDFLARE_TUNNEL_HOSTNAME=agent.mycompany.com
+$ nemoclaw start
+```
+
 ## Step 9: Verify the Services
 
 Check that the Telegram bridge is running:

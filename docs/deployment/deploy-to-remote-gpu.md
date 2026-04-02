@@ -102,5 +102,6 @@ $ nemoclaw deploy <instance-name>
 ## Related Topics
 
 - [Set Up the Telegram Bridge](set-up-telegram-bridge.md) to interact with the remote agent through Telegram.
+- [Set Up a Cloudflare Tunnel](set-up-cloudflare-tunnel.md) to expose the remote dashboard on a stable custom domain.
 - [Monitor Sandbox Activity](../monitoring/monitor-sandbox-activity.md) for sandbox monitoring tools.
 - [Commands](../reference/commands.md) for the full `deploy` command reference.

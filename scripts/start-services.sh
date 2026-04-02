@@ -17,6 +17,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DASHBOARD_PORT="${DASHBOARD_PORT:-18789}"
+CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
+CLOUDFLARE_TUNNEL_HOSTNAME="${CLOUDFLARE_TUNNEL_HOSTNAME:-}"
 
 # ── Parse flags ──────────────────────────────────────────────────
 SANDBOX_NAME="${NEMOCLAW_SANDBOX:-${SANDBOX_NAME:-default}}"
@@ -94,6 +96,16 @@ stop_service() {
   fi
 }
 
+# Returns the active tunnel URL: custom hostname (named tunnel) or the
+# randomly-assigned trycloudflare.com URL (quick tunnel).
+get_tunnel_url() {
+  if [ -n "$CLOUDFLARE_TUNNEL_HOSTNAME" ]; then
+    echo "https://${CLOUDFLARE_TUNNEL_HOSTNAME}"
+  elif [ -f "$PIDDIR/cloudflared.log" ]; then
+    grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
+  fi
+}
+
 show_status() {
   mkdir -p "$PIDDIR"
   echo ""
@@ -106,12 +118,10 @@ show_status() {
   done
   echo ""
 
-  if [ -f "$PIDDIR/cloudflared.log" ]; then
-    local url
-    url="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true)"
-    if [ -n "$url" ]; then
-      info "Public URL: $url"
-    fi
+  local url
+  url="$(get_tunnel_url)"
+  if [ -n "$url" ]; then
+    info "Public URL: $url"
   fi
 }
 
@@ -159,18 +169,27 @@ do_start() {
 
   # 3. cloudflared tunnel
   if command -v cloudflared >/dev/null 2>&1; then
-    start_service cloudflared \
-      cloudflared tunnel --url "http://localhost:$DASHBOARD_PORT"
+    if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+      # Named tunnel — routes and hostname are configured in the Cloudflare
+      # Zero Trust dashboard; no local --url flag needed.
+      start_service cloudflared \
+        cloudflared tunnel run --token "$CLOUDFLARE_TUNNEL_TOKEN"
+    else
+      # Quick tunnel — assigns a random *.trycloudflare.com URL.
+      start_service cloudflared \
+        cloudflared tunnel --url "http://localhost:$DASHBOARD_PORT"
+    fi
   else
     warn "cloudflared not found — no public URL. Install: brev-setup.sh or manually."
   fi
 
-  # Wait for cloudflared to publish URL
-  if is_running cloudflared; then
+  # Wait for cloudflared to publish URL (quick tunnels only — named tunnels
+  # use a hostname already known via CLOUDFLARE_TUNNEL_HOSTNAME).
+  if is_running cloudflared && [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
     info "Waiting for tunnel URL..."
     for _ in $(seq 1 15); do
       local url
-      url="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true)"
+      url="$(get_tunnel_url)"
       if [ -n "$url" ]; then
         break
       fi
@@ -184,10 +203,8 @@ do_start() {
   echo "  │  NemoClaw Services                                  │"
   echo "  │                                                     │"
 
-  local tunnel_url=""
-  if [ -f "$PIDDIR/cloudflared.log" ]; then
-    tunnel_url="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true)"
-  fi
+  local tunnel_url
+  tunnel_url="$(get_tunnel_url)"
 
   if [ -n "$tunnel_url" ]; then
     printf "  │  Public URL:  %-40s│\n" "$tunnel_url"

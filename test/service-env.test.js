@@ -119,6 +119,80 @@ describe("service environment", () => {
     });
   });
 
+  describe("CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_HOSTNAME", () => {
+    // Inline the relevant lines from start-services.sh for unit-level testing.
+    const getTokenLine = `CLOUDFLARE_TUNNEL_TOKEN="\${CLOUDFLARE_TUNNEL_TOKEN:-}"`;
+    const getHostnameLine = `CLOUDFLARE_TUNNEL_HOSTNAME="\${CLOUDFLARE_TUNNEL_HOSTNAME:-}"`;
+
+    it("CLOUDFLARE_TUNNEL_TOKEN defaults to empty when unset", () => {
+      const result = execSync(`bash -c '${getTokenLine}; echo "$CLOUDFLARE_TUNNEL_TOKEN"'`, {
+        encoding: "utf-8",
+        env: { ...process.env, CLOUDFLARE_TUNNEL_TOKEN: "" },
+      }).trim();
+      expect(result).toBe("");
+    });
+
+    it("CLOUDFLARE_TUNNEL_TOKEN is preserved when set", () => {
+      const result = execSync(`bash -c '${getTokenLine}; echo "$CLOUDFLARE_TUNNEL_TOKEN"'`, {
+        encoding: "utf-8",
+        env: { ...process.env, CLOUDFLARE_TUNNEL_TOKEN: "eyJtest" },
+      }).trim();
+      expect(result).toBe("eyJtest");
+    });
+
+    it("CLOUDFLARE_TUNNEL_HOSTNAME defaults to empty when unset", () => {
+      const result = execSync(`bash -c '${getHostnameLine}; echo "$CLOUDFLARE_TUNNEL_HOSTNAME"'`, {
+        encoding: "utf-8",
+        env: { ...process.env, CLOUDFLARE_TUNNEL_HOSTNAME: "" },
+      }).trim();
+      expect(result).toBe("");
+    });
+
+    it("CLOUDFLARE_TUNNEL_HOSTNAME is preserved when set", () => {
+      const result = execSync(`bash -c '${getHostnameLine}; echo "$CLOUDFLARE_TUNNEL_HOSTNAME"'`, {
+        encoding: "utf-8",
+        env: { ...process.env, CLOUDFLARE_TUNNEL_HOSTNAME: "agent.mycompany.com" },
+      }).trim();
+      expect(result).toBe("agent.mycompany.com");
+    });
+
+    it("get_tunnel_url returns https://<hostname> when CLOUDFLARE_TUNNEL_HOSTNAME is set", () => {
+      const script = `
+CLOUDFLARE_TUNNEL_HOSTNAME="agent.mycompany.com"
+PIDDIR="/tmp/test-nonexistent-$$"
+get_tunnel_url() {
+  if [ -n "$CLOUDFLARE_TUNNEL_HOSTNAME" ]; then
+    echo "https://$CLOUDFLARE_TUNNEL_HOSTNAME"
+  elif [ -f "$PIDDIR/cloudflared.log" ]; then
+    grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
+  fi
+}
+get_tunnel_url`;
+      const result = execSync(`bash -c '${script.replace(/'/g, "'\\''")}'`, {
+        encoding: "utf-8",
+      }).trim();
+      expect(result).toBe("https://agent.mycompany.com");
+    });
+
+    it("get_tunnel_url returns empty when no hostname and no log file", () => {
+      const script = `
+CLOUDFLARE_TUNNEL_HOSTNAME=""
+PIDDIR="/tmp/test-nonexistent-$$"
+get_tunnel_url() {
+  if [ -n "$CLOUDFLARE_TUNNEL_HOSTNAME" ]; then
+    echo "https://$CLOUDFLARE_TUNNEL_HOSTNAME"
+  elif [ -f "$PIDDIR/cloudflared.log" ]; then
+    grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
+  fi
+}
+get_tunnel_url`;
+      const result = execSync(`bash -c '${script.replace(/'/g, "'\\''")}'`, {
+        encoding: "utf-8",
+      }).trim();
+      expect(result).toBe("");
+    });
+  });
+
   describe("SANDBOX_NAME defaulting", () => {
     it("start-services.sh preserves existing SANDBOX_NAME", () => {
       const result = execSync(
