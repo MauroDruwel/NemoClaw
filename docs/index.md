@@ -254,6 +254,7 @@ Security Best Practices <security/best-practices>
 :hidden:
 
 Deploy to a Remote GPU Instance <deployment/deploy-to-remote-gpu>
+Configure a Custom Cloudflare Tunnel Domain <deployment/custom-tunnel-domain>
 Set Up the Telegram Bridge <deployment/set-up-telegram-bridge>
 Sandbox Hardening <deployment/sandbox-hardening>
 ```

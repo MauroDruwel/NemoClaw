@@ -4,8 +4,8 @@ title:
   nav: "Custom Tunnel Domain"
 description:
   main: "Set up a stable, predictable domain for your NemoClaw sandbox using Cloudflare tunnels."
-  agent: "Configure custom domain for the cloudflared tunnel. Use when setting up a stable domain, configuring Cloudflare tunnel routing, or deploying to production with a named tunnel."
-keywords: ["nemoclaw cloudflare tunnel domain", "custom tunnel domain", "cloudflared config"]
+  agent: "Configure custom domain for the cloudflared tunnel. Use when setting up a stable domain, configuring Cloudflare tunnel routing, or deploying to production with a custom tunnel."
+keywords: ["nemoclaw cloudflare tunnel domain", "custom tunnel domain", "cloudflare tunnel token", "cloudflared config"]
 topics: ["generative_ai", "ai_agents"]
 tags: ["openclaw", "openshell", "deployment", "cloudflare", "tunnel", "nemoclaw"]
 content:
@@ -23,150 +23,72 @@ status: published
 # Configure a Custom Cloudflare Tunnel Domain
 
 By default, NemoClaw uses temporary `trycloudflare.com` URLs that change each time you restart the sandbox.
-This guide shows you how to configure a stable, custom domain for predictable external access to your sandbox.
+This guide shows you how to configure a stable, custom domain using Cloudflare tunnels.
 
-Cloudflare tunnel domains are useful for:
-- **Development**: A consistent URL for testing integrations
+Custom tunnel domains are useful for:
+
+- **Development**: A consistent URL for testing integrations and webhooks
+- **Production**: Stable domain routing for always-on assistants
 - **Webhooks**: Reliable callback URLs for external services
-- **Production**: Stable domain routing for production deployments
+
+## Three Options
+
+You can configure a custom domain in three ways:
+
+1. **Option A: Tunnel Token** — Set a token in your Zero Trust dashboard (best for infrastructure/DevOps teams)
+2. **Option B: Browser Login** — One-time browser authentication (best for local development)
+3. **Default** — No config needed; get a free temporary `trycloudflare.com` URL (good for quick testing)
 
 ## Prerequisites
 
-Before you begin, ensure you have:
+All options require:
 
 - **cloudflared installed** on your host machine. Download from [Cloudflare Zero Trust](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
 - **A Cloudflare account** at [dash.cloudflare.com](https://dash.cloudflare.com).
-- **A domain managed by Cloudflare**. The domain must be set up as a Cloudflare zone so the tunnel can route traffic to it.
 
-## Option A: Quick Tunnel with a Custom Hostname
+For Options A and B, you also need:
 
-Use this approach for development and testing. Quick tunnels use legacy tunnel authentication and do not require creating a named tunnel.
+- **A domain managed by Cloudflare** (your domain must use Cloudflare's nameservers).
 
-### Step 1: Authenticate with Cloudflare
+## Option A: Tunnel Token (Zero Trust Dashboard)
 
-Authenticate `cloudflared` with your Cloudflare account:
+Use this approach if you manage Cloudflare infrastructure through the dashboard or have organizational tunnel policies.
+The token encodes all tunnel settings, so you don't need to set hostname separately.
+**The hostname environment variable is optional and only affects the banner display.**
 
-```bash
-$ cloudflared login
-```
+### Prerequisites
 
-A browser window opens automatically. Sign in with your Cloudflare account and authorize `cloudflared` to create tunnels on your behalf.
-After authorization, `cloudflared` saves your credentials locally.
+- Cloudflare account with Zero Trust enabled
+- A Cloudflare-managed domain
 
-### Step 2: Set the Custom Hostname Environment Variable
+### Step 1: Create a Tunnel in Zero Trust Dashboard
 
-Export the environment variable with your custom domain:
+1. Sign in to [Cloudflare Zero Trust Dashboard](https://one.dash.cloudflare.com/).
+2. Go to **Networks** > **Tunnels**.
+3. Click **Create a tunnel**.
+4. Enter a name (e.g., `nemoclaw`) and click **Save tunnel**.
+5. Select the environment (Linux/Mac/Windows/Docker).
+6. Copy the installation and token. Save this for the next step.
 
-```bash
-$ export NEMOCLAW_TUNNEL_HOSTNAME=clawie.example.com
-```
+### Step 2: Set the Token Environment Variable
 
-Replace `clawie.example.com` with your domain. The domain must be managed by your Cloudflare zone.
-
-### Step 3: Start NemoClaw
-
-Start the sandbox and auxiliary services:
+Export the tunnel token:
 
 ```bash
-$ nemoclaw start
+$ export CLOUDFLARE_TUNNEL_TOKEN="<your-token-here>"
 ```
 
-The cloudflared tunnel will use your custom hostname. When the tunnel is ready, you will see output showing the URL:
+### Step 3: (Optional) Set the Hostname for Display
 
-```
-Tunnel running at https://clawie.example.com
-```
-
-:::note
-Quick tunnels use legacy tunnel authentication. For production deployments with more control over tunnel routing and credentials, see **Option B: Named Tunnel (Recommended for Production)** below.
-:::
-
-## Option B: Named Tunnel (Recommended for Production)
-
-Use this approach for production deployments. Named tunnels provide:
-- Persistent tunnel credentials tied to a specific tunnel
-- Named routes for multiple destinations
-- Better control over DNS routing and ingress rules
-- A centralized `config.yml` for managing tunnel behavior
-
-### Step 1: Authenticate with Cloudflare
-
-If you haven't already, authenticate `cloudflared`:
+If you want NemoClaw to show a custom domain in the startup banner, also set:
 
 ```bash
-$ cloudflared login
+$ export CLOUDFLARE_TUNNEL_HOSTNAME=clawie.example.com
 ```
 
-### Step 2: Create a Named Tunnel
+This is purely for display — the token controls the actual routing.
 
-Create a new named tunnel called `nemoclaw`:
-
-```bash
-$ cloudflared tunnel create nemoclaw
-```
-
-`cloudflared` creates a tunnel and saves its ID and credentials to `~/.cloudflared/`.
-You'll see output like:
-
-```
-Tunnel credentials written to /home/user/.cloudflared/<tunnel-id>.json
-Tunnel <tunnel-id> created. Manage further with the 'cloudflared' CLI or at
-
-https://dash.cloudflare.com/dns/example.com?to=/bulk-routing/routes/tunnel/<tunnel-id>
-```
-
-Save the `<tunnel-id>` for the next step.
-
-### Step 3: Add the Tunnel Route
-
-Route your custom domain to the tunnel:
-
-```bash
-$ cloudflared tunnel route dns nemoclaw clawie.example.com
-```
-
-This creates a DNS CNAME record pointing `clawie.example.com` to your Cloudflare tunnel.
-
-### Step 4: Create the Tunnel Configuration File
-
-Create a `config.yml` file in `~/.cloudflared/config.yml`:
-
-```yaml
-# Tunnel credentials
-tunnel: <tunnel-id>
-credentials-file: /home/user/.cloudflared/<tunnel-id>.json
-
-# Logging
-loglevel: info
-
-# Ingress rules route traffic to the local NemoClaw sandbox
-ingress:
-  # Route the custom domain to the sandbox
-  - hostname: clawie.example.com
-    service: http://localhost:18789
-  # Catch-all for other requests
-  - service: http_status:404
-```
-
-Replace:
-- `<tunnel-id>` with the tunnel ID from Step 2
-- `/home/user` with your home directory path
-- `clawie.example.com` with your domain
-- `18789` with the sandbox dashboard port (usually 18789)
-
-:::warning
-Keep the `credentials-file` path consistent. The credentials file must be readable and contain valid tunnel credentials.
-:::
-
-### Step 5: Set the Configuration Path Environment Variable
-
-Export the path to your configuration file:
-
-```bash
-$ export NEMOCLAW_CLOUDFLARED_CONFIG=~/.cloudflared/config.yml
-```
-
-### Step 6: Start NemoClaw
+### Step 4: Start NemoClaw
 
 Start the sandbox and tunnel:
 
@@ -174,47 +96,123 @@ Start the sandbox and tunnel:
 $ nemoclaw start
 ```
 
-The cloudflared tunnel will use your named tunnel and the custom domain configured in `config.yml`:
+The tunnel will start with your token. You should see output like:
 
-```
+```bash
 Tunnel running at https://clawie.example.com
 ```
 
-## Default Behavior (No Environment Variables)
+Or if you didn't set the hostname, you'll see the actual tunnel URL from your dashboard.
 
-If neither `NEMOCLAW_TUNNEL_HOSTNAME` nor `NEMOCLAW_CLOUDFLARED_CONFIG` is set, NemoClaw uses the default temporary tunnel:
+## Option B: Browser Login (CLI-Native)
+
+Use this approach for local development or if you prefer one-time browser authentication.
+**Both environment variables are required for this option.**
+
+### Prerequisites
+
+- Cloudflare account with a domain on Cloudflare-managed DNS
+- One-time browser access to authorize cloudflared
+
+### Step 1: Authenticate with Cloudflare (Browser)
+
+Run the login command:
+
+```bash
+$ cloudflared login
+```
+
+A browser window opens automatically. Sign in with your Cloudflare account and authorize `cloudflared` to manage tunnels.
+After authorization, your credentials are saved locally.
+
+### Step 2: Set the Hostname Environment Variable
+
+Export your custom domain:
+
+```bash
+$ export CLOUDFLARE_TUNNEL_HOSTNAME=clawie.example.com
+```
+
+Replace `clawie.example.com` with your domain. The domain must be on a Cloudflare-managed DNS zone.
+
+### Step 3: Start NemoClaw
+
+Start the sandbox and tunnel:
 
 ```bash
 $ nemoclaw start
 ```
 
-This creates a temporary `trycloudflare.com` URL that is valid for 24 hours. The URL changes each time you restart the tunnel.
+NemoClaw passes your hostname to cloudflared, which handles DNS setup automatically:
+
+```bash
+Tunnel running at https://clawie.example.com
+```
+
+:::note
+Behind the scenes, NemoClaw runs:
+
+```bash
+cloudflared tunnel --hostname clawie.example.com run
+```
+
+The credentials from `cloudflared login` are automatically picked up.
+:::
+
+## Default Behavior (No Environment Variables)
+
+If you don't set `CLOUDFLARE_TUNNEL_TOKEN` or `CLOUDFLARE_TUNNEL_HOSTNAME`, NemoClaw uses the default temporary tunnel:
+
+```bash
+$ nemoclaw start
+```
+
+This creates a free, temporary `trycloudflare.com` URL that is valid for 24 hours. The URL changes each time you restart the tunnel.
 
 Use this for:
-- Local testing and development
-- Short-lived demos
-- Situations where a stable domain is not required
 
-## Environment Variable Priority
+- Quick testing and demos
+- Local development
+- Short-lived connections
 
-NemoClaw checks environment variables in this order:
+Example output:
 
-1. **`NEMOCLAW_CLOUDFLARED_CONFIG`** — Path to a `config.yml` file (takes precedence)
-2. **`NEMOCLAW_TUNNEL_HOSTNAME`** — Custom domain with quick tunnel authentication
-3. **Default** — Temporary `trycloudflare.com` URL
+```bash
+Tunnel running at https://randomly-generated-url.trycloudflare.com
+```
 
-If both variables are set, `NEMOCLAW_CLOUDFLARED_CONFIG` is used.
+## Environment Variable Reference
+
+| Variable | Option | Description | Required |
+|----------|--------|-------------|----------|
+| `CLOUDFLARE_TUNNEL_TOKEN` | A | Tunnel token from Cloudflare Zero Trust dashboard | Yes (for Option A) |
+| `CLOUDFLARE_TUNNEL_HOSTNAME` | A, B | Custom domain for display (Option A) or routing (Option B) | Optional (A); Required (B) |
+
+### Priority
+
+If both variables are set, `CLOUDFLARE_TUNNEL_TOKEN` takes precedence. NemoClaw will use the token-based tunnel and ignore the hostname setting (though it may still display in logs).
+
+## When to Use Which Option
+
+| Use Case | Recommended | Why |
+|----------|-------------|-----|
+| Infrastructure/DevOps team managing tunnels centrally | **Option A** | Token is stored in secrets management, no browser needed |
+| Local development on your machine | **Option B** | One-time login, simple to set up |
+| Quick testing or short-lived demos | **Default** | No setup, free, automatic cleanup |
+| Production deployment with named routes | **Option A** | Token-based tunnels offer more control and centralized management |
 
 ## Security Considerations
 
 :::warning
 Your tunnel domain is **publicly accessible** over the internet.
+
 Ensure that your NemoClaw sandbox has appropriate security measures in place:
 
 - Keep device authentication enabled in the sandbox policy.
 - Use strong credentials for any services exposed through the tunnel.
 - Monitor the OpenShell TUI for unexpected network requests.
-- Restrict access by IP if possible using Cloudflare firewall rules.
+- Restrict access by IP using Cloudflare firewall rules.
+- Store tunnel tokens securely (never commit to version control).
 :::
 
 ## Troubleshooting
@@ -222,24 +220,20 @@ Ensure that your NemoClaw sandbox has appropriate security measures in place:
 ### Tunnel fails to start
 
 - Verify `cloudflared` is installed: `cloudflared --version`
-- Verify you are authenticated: `cloudflared tunnel list`
-- Check that the domain is managed by your Cloudflare zone
+- For Option B, verify you are authenticated: `cloudflared tunnel list`
+- For Option A, check that the token is valid and not expired
 
-### "Permission denied" on credentials file
+### "Tunnel not found" error
 
-Ensure the credentials file in `~/.cloudflared/` is readable:
+- For Option B: Run `cloudflared login` again
+- For Option A: Verify the token is correct and the tunnel exists in your Cloudflare dashboard
+- Ensure the domain is on a Cloudflare-managed DNS zone
 
-```bash
-$ ls -la ~/.cloudflared/<tunnel-id>.json
-```
+### Custom hostname not resolving
 
-The file should have `600` or `644` permissions.
-
-### DNS not resolving
-
-- Verify the tunnel route was created: `cloudflared tunnel route list`
-- Check your Cloudflare dashboard for the CNAME record
-- Wait a few minutes for DNS propagation
+- For Option B: Wait a few minutes for DNS propagation
+- Check the Cloudflare dashboard for CNAME records
+- Verify the domain is in your Cloudflare zone
 
 ## Related Topics
 

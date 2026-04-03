@@ -161,7 +161,16 @@ Start auxiliary services, such as the Telegram bridge and cloudflared tunnel.
 $ nemoclaw start
 ```
 
-Requires `TELEGRAM_BOT_TOKEN` for the Telegram bridge.
+**Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token from [BotFather](https://t.me/BotFather). Enables the Telegram bridge. |
+| `ALLOWED_CHAT_IDS` | Comma-separated list of Telegram chat IDs to restrict bridge access (optional). |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Tunnel token from Cloudflare Zero Trust dashboard (e.g., `ey...`). Uses token-based authentication. |
+| `CLOUDFLARE_TUNNEL_HOSTNAME` | Custom domain for the tunnel (e.g., `clawie.example.com`). Paired with token or used with `cloudflared login`. |
+
+See Configure a Custom Cloudflare Tunnel Domain (see the `nemoclaw-deploy-remote` skill) for detailed tunnel setup instructions.
 
 ### `nemoclaw stop`
 
