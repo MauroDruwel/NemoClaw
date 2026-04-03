@@ -153,7 +153,7 @@ do_start() {
   local min_inner=53
   local inner=$min_inner
   if [ -n "$tunnel_url" ]; then
-    local url_inner=$(( ${#tunnel_url} + 17 )) # "  Public URL:  " = 15 chars + 2 trailing spaces
+    local url_inner=$((${#tunnel_url} + 17)) # "  Public URL:  " = 15 chars + 2 trailing spaces
     [ "$url_inner" -gt "$inner" ] && inner=$url_inner
   fi
   # Messaging line: "  Messaging:   via OpenClaw native channels (if configured)" = 59 chars + 2 padding
@@ -163,14 +163,14 @@ do_start() {
 
   echo ""
   printf "  ┌%s┐\n" "$h_bar"
-  printf "  │  NemoClaw Services%-*s│\n" $(( inner - 19 )) ""
+  printf "  │  NemoClaw Services%-*s│\n" $((inner - 19)) ""
   printf "  │%-*s│\n" "$inner" ""
   if [ -n "$tunnel_url" ]; then
-    printf "  │  Public URL:  %-*s│\n" $(( inner - 15 )) "$tunnel_url"
+    printf "  │  Public URL:  %-*s│\n" $((inner - 15)) "$tunnel_url"
   fi
-  printf "  │  Messaging:   via OpenClaw native channels (if configured)%-*s│\n" $(( inner - 59 )) ""
+  printf "  │  Messaging:   via OpenClaw native channels (if configured)%-*s│\n" $((inner - 59)) ""
   printf "  │%-*s│\n" "$inner" ""
-  printf "  │  Run 'openshell term' to monitor egress approvals%-*s│\n" $(( inner - 50 )) ""
+  printf "  │  Run 'openshell term' to monitor egress approvals%-*s│\n" $((inner - 50)) ""
   printf "  └%s┘\n" "$h_bar"
   echo ""
 }
