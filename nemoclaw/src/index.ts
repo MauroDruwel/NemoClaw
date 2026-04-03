@@ -317,14 +317,21 @@ export default function register(api: OpenClawPluginApi): void {
     );
   }
 
+  const bannerPrefix = 13; // length of "  Endpoint:  " / "  Provider:  " / "  Model:     "
+  const bannerMinInner = 53;
+  const bannerMaxValueLen = Math.max(bannerEndpoint.length, bannerProvider.length, bannerModel.length);
+  const bannerInner = Math.max(bannerMinInner, bannerPrefix + bannerMaxValueLen + 2);
+  const bannerPad = (s: string) => s + " ".repeat(bannerInner - s.length);
+  const bannerHBar = "─".repeat(bannerInner);
+
   api.logger.info("");
-  api.logger.info("  ┌─────────────────────────────────────────────────────┐");
-  api.logger.info("  │  NemoClaw registered                                │");
-  api.logger.info("  │                                                     │");
-  api.logger.info(`  │  Endpoint:  ${bannerEndpoint.padEnd(40)}│`);
-  api.logger.info(`  │  Provider:  ${bannerProvider.padEnd(40)}│`);
-  api.logger.info(`  │  Model:     ${bannerModel.padEnd(40)}│`);
-  api.logger.info("  │  Slash:     /nemoclaw                               │");
-  api.logger.info("  └─────────────────────────────────────────────────────┘");
+  api.logger.info(`  ┌${bannerHBar}┐`);
+  api.logger.info(`  │${bannerPad("  NemoClaw registered")}│`);
+  api.logger.info(`  │${" ".repeat(bannerInner)}│`);
+  api.logger.info(`  │${bannerPad("  Endpoint:  " + bannerEndpoint)}│`);
+  api.logger.info(`  │${bannerPad("  Provider:  " + bannerProvider)}│`);
+  api.logger.info(`  │${bannerPad("  Model:     " + bannerModel)}│`);
+  api.logger.info(`  │${bannerPad("  Slash:     /nemoclaw")}│`);
+  api.logger.info(`  └${bannerHBar}┘`);
   api.logger.info("");
 }
