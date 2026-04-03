@@ -1,0 +1,11 @@
+{
+  "assignments": [
+    {
+      "assignment_id": "assign-001",
+      "timestamp": "2026-04-03T10:11:49Z",
+      "universe": "alien",
+      "project": "NemoClaw",
+      "agents": ["Ripley", "Dallas", "Hicks", "Hudson", "Scribe", "Ralph"]
+    }
+  ]
+}
