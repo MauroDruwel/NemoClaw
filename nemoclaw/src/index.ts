@@ -319,7 +319,11 @@ export default function register(api: OpenClawPluginApi): void {
 
   const bannerPrefix = 13; // length of "  Endpoint:  " / "  Provider:  " / "  Model:     "
   const bannerMinInner = 53;
-  const bannerMaxValueLen = Math.max(bannerEndpoint.length, bannerProvider.length, bannerModel.length);
+  const bannerMaxValueLen = Math.max(
+    bannerEndpoint.length,
+    bannerProvider.length,
+    bannerModel.length,
+  );
   const bannerInner = Math.max(bannerMinInner, bannerPrefix + bannerMaxValueLen + 2);
   const bannerPad = (s: string) => s + " ".repeat(bannerInner - s.length);
   const bannerHBar = "─".repeat(bannerInner);
