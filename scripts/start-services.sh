@@ -144,24 +144,34 @@ do_start() {
   fi
 
   # Print banner
-  echo ""
-  echo "  ┌─────────────────────────────────────────────────────┐"
-  echo "  │  NemoClaw Services                                  │"
-  echo "  │                                                     │"
-
   local tunnel_url=""
   if [ -f "$PIDDIR/cloudflared.log" ]; then
     tunnel_url="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true)"
   fi
 
+  # Expand box width if the URL is longer than the default inner width (53)
+  local min_inner=53
+  local inner=$min_inner
   if [ -n "$tunnel_url" ]; then
-    printf "  │  Public URL:  %-40s│\n" "$tunnel_url"
+    local url_inner=$(( ${#tunnel_url} + 17 )) # "  Public URL:  " = 15 chars + 2 trailing spaces
+    [ "$url_inner" -gt "$inner" ] && inner=$url_inner
   fi
+  # Messaging line: "  Messaging:   via OpenClaw native channels (if configured)" = 59 chars + 2 padding
+  [ $(( 59 + 2 )) -gt "$inner" ] && inner=$(( 59 + 2 ))
+  local h_bar
+  h_bar="$(printf '%*s' "$inner" '' | tr ' ' '─')"
 
-  echo "  │  Messaging:   via OpenClaw native channels (if configured) │"
-  echo "  │                                                     │"
-  echo "  │  Run 'openshell term' to monitor egress approvals   │"
-  echo "  └─────────────────────────────────────────────────────┘"
+  echo ""
+  printf "  ┌%s┐\n" "$h_bar"
+  printf "  │  NemoClaw Services%-*s│\n" $(( inner - 19 )) ""
+  printf "  │%-*s│\n" "$inner" ""
+  if [ -n "$tunnel_url" ]; then
+    printf "  │  Public URL:  %-*s│\n" $(( inner - 15 )) "$tunnel_url"
+  fi
+  printf "  │  Messaging:   via OpenClaw native channels (if configured)%-*s│\n" $(( inner - 59 )) ""
+  printf "  │%-*s│\n" "$inner" ""
+  printf "  │  Run 'openshell term' to monitor egress approvals%-*s│\n" $(( inner - 50 )) ""
+  printf "  └%s┘\n" "$h_bar"
   echo ""
 }
 

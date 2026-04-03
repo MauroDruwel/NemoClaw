@@ -289,11 +289,6 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
   }
 
   // Banner
-  console.log("");
-  console.log("  ┌─────────────────────────────────────────────────────┐");
-  console.log("  │  NemoClaw Services                                  │");
-  console.log("  │                                                     │");
-
   let tunnelUrl = "";
   const cfLogFile = join(pidDir, "cloudflared.log");
   if (isRunning(pidDir, "cloudflared") && existsSync(cfLogFile)) {
@@ -304,15 +299,32 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
     }
   }
 
+  const titleText = "  NemoClaw Services";
+  const urlPrefix = "  Public URL:  ";
+  const messagingText = "  Messaging:   via OpenClaw native channels (if configured)";
+  const footerText = "  Run 'openshell term' to monitor egress approvals";
+
+  // Expand box width if the URL or messaging line is longer than the default inner width (53)
+  const minInner = 53;
+  const contentMax = Math.max(messagingText.length + 2, footerText.length + 2);
+  const inner = tunnelUrl
+    ? Math.max(minInner, contentMax, urlPrefix.length + tunnelUrl.length + 2)
+    : Math.max(minInner, contentMax);
+
+  const pad = (s: string) => s + " ".repeat(inner - s.length);
+  const hBar = "─".repeat(inner);
+
+  console.log("");
+  console.log(`  ┌${hBar}┐`);
+  console.log(`  │${pad(titleText)}│`);
+  console.log(`  │${" ".repeat(inner)}│`);
   if (tunnelUrl) {
-    console.log(`  │  Public URL:  ${tunnelUrl.padEnd(40)}│`);
+    console.log(`  │${pad(urlPrefix + tunnelUrl)}│`);
   }
-
-  console.log("  │  Messaging:   via OpenClaw native channels (if configured) │");
-
-  console.log("  │                                                     │");
-  console.log("  │  Run 'openshell term' to monitor egress approvals   │");
-  console.log("  └─────────────────────────────────────────────────────┘");
+  console.log(`  │${pad(messagingText)}│`);
+  console.log(`  │${" ".repeat(inner)}│`);
+  console.log(`  │${pad(footerText)}│`);
+  console.log(`  └${hBar}┘`);
   console.log("");
 }
 
