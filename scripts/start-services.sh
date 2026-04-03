@@ -158,8 +158,8 @@ do_start() {
   fi
   # Messaging line: "  Messaging:   via OpenClaw native channels (if configured)" = 59 chars + 2 padding
   [ $(( 59 + 2 )) -gt "$inner" ] && inner=$(( 59 + 2 ))
-  local h_bar
-  h_bar="$(printf '%*s' "$inner" '' | tr ' ' '─')"
+  local h_bar=""
+  for ((i = 0; i < inner; i++)); do h_bar+="─"; done
 
   echo ""
   printf "  ┌%s┐\n" "$h_bar"
