@@ -133,17 +133,6 @@ describe("showStatus", () => {
     logSpy.mockRestore();
   });
 
-  it("shows config path when cloudflared is running with cloudflaredConfig", () => {
-    // Write a valid PID file pointing to a real running process
-    writeFileSync(join(pidDir, "cloudflared.pid"), String(process.pid));
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    showStatus({ pidDir, cloudflaredConfig: "/etc/cf/config.yml" });
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
-    expect(output).toContain("Tunnel: custom config (/etc/cf/config.yml)");
-    logSpy.mockRestore();
-  });
-
   it("does not show tunnel URL when cloudflared is not running even with tunnelHostname", () => {
     // Write stale PID
     writeFileSync(join(pidDir, "cloudflared.pid"), "999999999");
@@ -155,21 +144,52 @@ describe("showStatus", () => {
     logSpy.mockRestore();
   });
 
-  it("reads tunnelHostname from NEMOCLAW_TUNNEL_HOSTNAME env var", () => {
-    // Set env var
-    process.env.NEMOCLAW_TUNNEL_HOSTNAME = "env-test.example.com";
+  it("reads tunnelHostname from CLOUDFLARE_TUNNEL_HOSTNAME env var", () => {
+    process.env.CLOUDFLARE_TUNNEL_HOSTNAME = "env-test.example.com";
 
-    // Write valid PID
     writeFileSync(join(pidDir, "cloudflared.pid"), String(process.pid));
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    showStatus({ pidDir }); // No opts, should read from env
+    showStatus({ pidDir });
     const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("Public URL: https://env-test.example.com");
     logSpy.mockRestore();
 
-    // Cleanup
-    delete process.env.NEMOCLAW_TUNNEL_HOSTNAME;
+    delete process.env.CLOUDFLARE_TUNNEL_HOSTNAME;
+  });
+
+  it("shows hostname URL when cloudflared running with token and hostname", () => {
+    writeFileSync(join(pidDir, "cloudflared.pid"), String(process.pid));
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    showStatus({ pidDir, tunnelToken: "tok", tunnelHostname: "clawie.maurodruwel.be" });
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Public URL: https://clawie.maurodruwel.be");
+    logSpy.mockRestore();
+  });
+
+  it("shows named tunnel message when cloudflared running with token but no hostname", () => {
+    writeFileSync(join(pidDir, "cloudflared.pid"), String(process.pid));
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    showStatus({ pidDir, tunnelToken: "tok" });
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("named tunnel");
+    logSpy.mockRestore();
+  });
+
+  it("reads tunnelToken from CLOUDFLARE_TUNNEL_TOKEN env var", () => {
+    process.env.CLOUDFLARE_TUNNEL_TOKEN = "env-token-abc";
+
+    writeFileSync(join(pidDir, "cloudflared.pid"), String(process.pid));
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    showStatus({ pidDir });
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("named tunnel");
+    logSpy.mockRestore();
+
+    delete process.env.CLOUDFLARE_TUNNEL_TOKEN;
   });
 });
 
@@ -229,20 +249,6 @@ describe("buildCloudflaredArgs", () => {
     ]);
   });
 
-  it("returns --config args when cloudflaredConfig is set", () => {
-    const args = buildCloudflaredArgs(18789, undefined, "/etc/cf/config.yml");
-    expect(args).toEqual(["tunnel", "--config", "/etc/cf/config.yml", "run"]);
-  });
-
-  it("config takes precedence over hostname when both set", () => {
-    const args = buildCloudflaredArgs(
-      18789,
-      "clawie.maurodruwel.be",
-      "/etc/cf/config.yml",
-    );
-    expect(args).toEqual(["tunnel", "--config", "/etc/cf/config.yml", "run"]);
-  });
-
   it("uses custom dashboard port in URL", () => {
     const args = buildCloudflaredArgs(9000, "clawie.maurodruwel.be", undefined);
     expect(args).toEqual([
@@ -252,5 +258,20 @@ describe("buildCloudflaredArgs", () => {
       "--url",
       "http://localhost:9000",
     ]);
+  });
+
+  it("returns token run args when tunnelToken is set", () => {
+    const args = buildCloudflaredArgs(18789, undefined, "test-token");
+    expect(args).toEqual(["tunnel", "run", "--token", "test-token"]);
+  });
+
+  it("token takes precedence over hostname when both set", () => {
+    const args = buildCloudflaredArgs(18789, "clawie.maurodruwel.be", "test-token");
+    expect(args).toEqual(["tunnel", "run", "--token", "test-token"]);
+  });
+
+  it("uses token args regardless of port", () => {
+    const args = buildCloudflaredArgs(9999, undefined, "my-token");
+    expect(args).toEqual(["tunnel", "run", "--token", "my-token"]);
   });
 });
