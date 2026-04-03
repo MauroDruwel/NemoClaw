@@ -17,6 +17,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DASHBOARD_PORT="${DASHBOARD_PORT:-18789}"
+NEMOCLAW_TUNNEL_HOSTNAME="${NEMOCLAW_TUNNEL_HOSTNAME:-}"
+NEMOCLAW_CLOUDFLARED_CONFIG="${NEMOCLAW_CLOUDFLARED_CONFIG:-}"
 
 # ── Parse flags ──────────────────────────────────────────────────
 SANDBOX_NAME="${NEMOCLAW_SANDBOX:-${SANDBOX_NAME:-default}}"
@@ -106,11 +108,17 @@ show_status() {
   done
   echo ""
 
-  if [ -f "$PIDDIR/cloudflared.log" ]; then
-    local url
-    url="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true)"
-    if [ -n "$url" ]; then
-      info "Public URL: $url"
+  if is_running cloudflared; then
+    if [ -n "$NEMOCLAW_CLOUDFLARED_CONFIG" ]; then
+      info "Tunnel: custom config (${NEMOCLAW_CLOUDFLARED_CONFIG})"
+    elif [ -n "$NEMOCLAW_TUNNEL_HOSTNAME" ]; then
+      info "Public URL: https://${NEMOCLAW_TUNNEL_HOSTNAME}"
+    elif [ -f "$PIDDIR/cloudflared.log" ]; then
+      local url
+      url="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true)"
+      if [ -n "$url" ]; then
+        info "Public URL: $url"
+      fi
     fi
   fi
 }
@@ -157,16 +165,25 @@ do_start() {
       node "$REPO_DIR/scripts/telegram-bridge.js"
   fi
 
-  # 3. cloudflared tunnel
+  # cloudflared tunnel
   if command -v cloudflared >/dev/null 2>&1; then
-    start_service cloudflared \
-      cloudflared tunnel --url "http://localhost:$DASHBOARD_PORT"
+    if [ -n "$NEMOCLAW_CLOUDFLARED_CONFIG" ]; then
+      start_service cloudflared \
+        cloudflared tunnel --config "$NEMOCLAW_CLOUDFLARED_CONFIG" run
+    elif [ -n "$NEMOCLAW_TUNNEL_HOSTNAME" ]; then
+      start_service cloudflared \
+        cloudflared tunnel --hostname "$NEMOCLAW_TUNNEL_HOSTNAME" \
+        --url "http://localhost:$DASHBOARD_PORT"
+    else
+      start_service cloudflared \
+        cloudflared tunnel --url "http://localhost:$DASHBOARD_PORT"
+    fi
   else
     warn "cloudflared not found — no public URL. Install: brev-setup.sh or manually."
   fi
 
-  # Wait for cloudflared to publish URL
-  if is_running cloudflared; then
+  # Wait for tunnel URL (only needed for trycloudflare — custom hostname is known immediately)
+  if is_running cloudflared && [ -z "$NEMOCLAW_TUNNEL_HOSTNAME" ] && [ -z "$NEMOCLAW_CLOUDFLARED_CONFIG" ]; then
     info "Waiting for tunnel URL..."
     for _ in $(seq 1 15); do
       local url
@@ -185,7 +202,11 @@ do_start() {
   echo "  │                                                     │"
 
   local tunnel_url=""
-  if [ -f "$PIDDIR/cloudflared.log" ]; then
+  if [ -n "$NEMOCLAW_CLOUDFLARED_CONFIG" ]; then
+    tunnel_url="custom config (${NEMOCLAW_CLOUDFLARED_CONFIG})"
+  elif [ -n "$NEMOCLAW_TUNNEL_HOSTNAME" ]; then
+    tunnel_url="https://${NEMOCLAW_TUNNEL_HOSTNAME}"
+  elif [ -f "$PIDDIR/cloudflared.log" ]; then
     tunnel_url="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true)"
   fi
 

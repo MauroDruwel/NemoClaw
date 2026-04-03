@@ -65,6 +65,8 @@ The deploy script performs the following steps on the VM:
 3. Runs `nemoclaw onboard` (the setup wizard) to create the gateway, register providers, and launch the sandbox.
 4. Starts auxiliary services, such as the Telegram bridge and cloudflared tunnel.
 
+By default, the tunnel uses a temporary `trycloudflare.com` URL. For production deployments with a stable custom domain, configure `NEMOCLAW_TUNNEL_HOSTNAME` or `NEMOCLAW_CLOUDFLARED_CONFIG` before running `nemoclaw deploy`. See [Configure a Custom Cloudflare Tunnel Domain](custom-tunnel-domain.md) for details.
+
 ## Connect to the Remote Sandbox
 
 After deployment finishes, the deploy command opens an interactive shell inside the remote sandbox.

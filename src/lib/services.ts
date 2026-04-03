@@ -27,6 +27,10 @@ export interface ServiceOptions {
   repoDir?: string;
   /** Override PID directory (default: /tmp/nemoclaw-services-{sandbox}). */
   pidDir?: string;
+  /** Custom tunnel hostname (e.g. clawie.maurodruwel.be). When set, uses cloudflared --hostname flag. Requires cloudflared login. */
+  tunnelHostname?: string;
+  /** Path to a cloudflared config.yml for named tunnels. Takes precedence over tunnelHostname. */
+  cloudflaredConfig?: string;
 }
 
 export interface ServiceStatus {
@@ -192,6 +196,28 @@ function stopService(pidDir: string, name: ServiceName): void {
 }
 
 // ---------------------------------------------------------------------------
+// Cloudflared helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build cloudflared CLI arguments based on tunnel configuration.
+ * Priority: config file > custom hostname > trycloudflare (default).
+ */
+export function buildCloudflaredArgs(
+  dashboardPort: number,
+  tunnelHostname: string | undefined,
+  cloudflaredConfig: string | undefined,
+): string[] {
+  if (cloudflaredConfig) {
+    return ["tunnel", "--config", cloudflaredConfig, "run"];
+  }
+  if (tunnelHostname) {
+    return ["tunnel", "--hostname", tunnelHostname, "--url", `http://localhost:${String(dashboardPort)}`];
+  }
+  return ["tunnel", "--url", `http://localhost:${String(dashboardPort)}`];
+}
+
+// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
@@ -228,12 +254,23 @@ export function showStatus(opts: ServiceOptions = {}): void {
   console.log("");
 
   // Only show tunnel URL if cloudflared is actually running
-  const logFile = join(pidDir, "cloudflared.log");
-  if (isRunning(pidDir, "cloudflared") && existsSync(logFile)) {
-    const log = readFileSync(logFile, "utf-8");
-    const match = /https:\/\/[a-z0-9-]*\.trycloudflare\.com/.exec(log);
-    if (match) {
-      info(`Public URL: ${match[0]}`);
+  if (isRunning(pidDir, "cloudflared")) {
+    const tunnelHostname = opts.tunnelHostname ?? process.env.NEMOCLAW_TUNNEL_HOSTNAME;
+    const cloudflaredConfig = opts.cloudflaredConfig ?? process.env.NEMOCLAW_CLOUDFLARED_CONFIG;
+
+    if (tunnelHostname && !cloudflaredConfig) {
+      info(`Public URL: https://${tunnelHostname}`);
+    } else if (cloudflaredConfig) {
+      info(`Tunnel: custom config (${cloudflaredConfig})`);
+    } else {
+      const logFile = join(pidDir, "cloudflared.log");
+      if (existsSync(logFile)) {
+        const log = readFileSync(logFile, "utf-8");
+        const match = /https:\/\/[a-z0-9-]*\.trycloudflare\.com/.exec(log);
+        if (match) {
+          info(`Public URL: ${match[0]}`);
+        }
+      }
     }
   }
 }
@@ -251,6 +288,8 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
   const dashboardPort = opts.dashboardPort ?? (Number(process.env.DASHBOARD_PORT) || 18789);
   // Compiled location: dist/lib/services.js → repo root is 2 levels up
   const repoDir = opts.repoDir ?? join(__dirname, "..", "..");
+  const tunnelHostname = opts.tunnelHostname ?? process.env.NEMOCLAW_TUNNEL_HOSTNAME;
+  const cloudflaredConfig = opts.cloudflaredConfig ?? process.env.NEMOCLAW_CLOUDFLARED_CONFIG;
 
   if (!process.env.TELEGRAM_BOT_TOKEN) {
     warn("TELEGRAM_BOT_TOKEN not set — Telegram bridge will not start.");
@@ -307,17 +346,14 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
     execSync("command -v cloudflared", {
       stdio: ["ignore", "ignore", "ignore"],
     });
-    startService(pidDir, "cloudflared", "cloudflared", [
-      "tunnel",
-      "--url",
-      `http://localhost:${String(dashboardPort)}`,
-    ]);
+    const cfArgs = buildCloudflaredArgs(dashboardPort, tunnelHostname, cloudflaredConfig);
+    startService(pidDir, "cloudflared", "cloudflared", cfArgs);
   } catch {
     warn("cloudflared not found — no public URL. Install: brev-setup.sh or manually.");
   }
 
-  // Wait for cloudflared URL
-  if (isRunning(pidDir, "cloudflared")) {
+  // Wait for tunnel URL (only needed for trycloudflare)
+  if (isRunning(pidDir, "cloudflared") && !tunnelHostname && !cloudflaredConfig) {
     info("Waiting for tunnel URL...");
     const logFile = join(pidDir, "cloudflared.log");
     for (let i = 0; i < 15; i++) {
@@ -341,7 +377,12 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
 
   let tunnelUrl = "";
   const cfLogFile = join(pidDir, "cloudflared.log");
-  if (isRunning(pidDir, "cloudflared") && existsSync(cfLogFile)) {
+
+  if (cloudflaredConfig) {
+    tunnelUrl = `custom config (${cloudflaredConfig})`;
+  } else if (tunnelHostname) {
+    tunnelUrl = `https://${tunnelHostname}`;
+  } else if (isRunning(pidDir, "cloudflared") && existsSync(cfLogFile)) {
     const log = readFileSync(cfLogFile, "utf-8");
     const match = /https:\/\/[a-z0-9-]*\.trycloudflare\.com/.exec(log);
     if (match) {
