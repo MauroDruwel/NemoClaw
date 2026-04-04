@@ -2,7 +2,9 @@
 title:
   page: "NemoClaw CLI Commands Reference"
   nav: "Commands"
-description: "Full CLI reference for slash commands and standalone NemoClaw commands."
+description:
+  main: "Full CLI reference for slash commands and standalone NemoClaw commands."
+  agent: "Lists all slash commands and standalone NemoClaw CLI commands. Use when looking up a command, checking command syntax, or browsing the CLI reference."
 keywords: ["nemoclaw cli commands", "nemoclaw command reference"]
 topics: ["generative_ai", "ai_agents"]
 tags: ["openclaw", "openshell", "nemoclaw", "cli"]
@@ -69,6 +71,11 @@ Supported non-experimental choices include NVIDIA Endpoints, OpenAI, Anthropic, 
 Credentials are stored in `~/.nemoclaw/credentials.json`.
 The legacy `nemoclaw setup` command is deprecated; use `nemoclaw onboard` instead.
 
+If you enable Brave Search during onboarding, NemoClaw currently stores the Brave API key in the sandbox's OpenClaw configuration.
+That means the OpenClaw agent can read the key.
+NemoClaw explores an OpenShell-hosted credential path first, but the current OpenClaw Brave runtime does not consume that path end to end yet.
+Treat Brave Search as an explicit opt-in and use a dedicated low-privilege Brave key.
+
 For non-interactive onboarding, you must explicitly accept the third-party software notice:
 
 ```console
@@ -80,6 +87,15 @@ or:
 ```console
 $ NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 nemoclaw onboard --non-interactive
 ```
+
+To enable Brave Search in non-interactive mode, set:
+
+```console
+$ BRAVE_API_KEY=... \
+  nemoclaw onboard --non-interactive
+```
+
+`BRAVE_API_KEY` enables Brave Search in non-interactive mode and also enables `web_fetch`.
 
 The wizard prompts for a sandbox name.
 Names must follow RFC 1123 subdomain rules: lowercase alphanumeric characters and hyphens only, and must start and end with an alphanumeric character.
@@ -253,7 +269,7 @@ $ nemoclaw uninstall [--yes] [--keep-openshell] [--delete-models]
 ### Legacy `nemoclaw setup`
 
 Deprecated. Use `nemoclaw onboard` instead.
-The legacy setup command runs the old setup script for backwards compatibility only.
+Running `nemoclaw setup` now delegates directly to `nemoclaw onboard`.
 
 ```console
 $ nemoclaw setup
