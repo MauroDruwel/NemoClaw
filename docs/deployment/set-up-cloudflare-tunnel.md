@@ -78,7 +78,7 @@ $ nemoclaw start
 
 The banner prints the custom domain once `cloudflared` has loaded its ingress configuration:
 
-```
+```text
   ┌─────────────────────────────────────────────────────┐
   │  NemoClaw Services                                  │
   │                                                     │

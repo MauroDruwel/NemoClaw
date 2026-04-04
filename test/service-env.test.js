@@ -143,7 +143,7 @@ describe("service environment", () => {
 CLOUDFLARE_TUNNEL_TOKEN=""
 PIDDIR="/tmp/test-nonexistent-$$"
 get_tunnel_url() {
-  [ -f "$PIDDIR/cloudflared.log" ] || return
+  [ -f "$PIDDIR/cloudflared.log" ] || return 0
   if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
     local host
     host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \\
@@ -161,7 +161,7 @@ get_tunnel_url`;
     });
 
     it("get_tunnel_url parses hostname from named tunnel log", () => {
-      const tmpLog = `/tmp/test-cloudflared-named-$$.log`;
+      const _tmpLog = `/tmp/test-cloudflared-named-$$.log`;
       const script = `
 CLOUDFLARE_TUNNEL_TOKEN="eyJtest"
 PIDDIR="/tmp/test-named-$$"

@@ -99,7 +99,7 @@ stop_service() {
 # Named tunnels: cloudflared logs "hostname=<domain>" when loading ingress rules.
 # Quick tunnels: cloudflared logs the randomly-assigned *.trycloudflare.com URL.
 get_tunnel_url() {
-  [ -f "$PIDDIR/cloudflared.log" ] || return
+  [ -f "$PIDDIR/cloudflared.log" ] || return 0
   if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
     local host
     host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \
