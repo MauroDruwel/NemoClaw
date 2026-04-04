@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DASHBOARD_PORT="${DASHBOARD_PORT:-18789}"
 CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
@@ -225,9 +225,11 @@ do_start() {
   echo ""
 }
 
-# Dispatch
-case "$ACTION" in
-  stop) do_stop ;;
-  status) show_status ;;
-  start) do_start ;;
-esac
+# Dispatch — skipped when the script is sourced (e.g. for unit tests).
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  case "$ACTION" in
+    stop) do_stop ;;
+    status) show_status ;;
+    start) do_start ;;
+  esac
+fi

@@ -5,7 +5,7 @@ title:
 description: "Expose the NemoClaw dashboard on a custom domain using a Cloudflare named tunnel."
 keywords: ["nemoclaw cloudflare tunnel", "cloudflare named tunnel", "custom domain nemoclaw", "cloudflared nemoclaw"]
 topics: ["generative_ai", "ai_agents"]
-tags: ["openclaw", "cloudflare", "deployment", "nemoclaw", "networking"]
+tags: ["OpenClaw", "cloudflare", "deployment", "nemoclaw", "networking"]
 content:
   type: how_to
   difficulty: intermediate
@@ -22,8 +22,7 @@ status: published
 
 Expose the NemoClaw dashboard on a stable, custom domain using a Cloudflare named tunnel.
 
-By default, `nemoclaw start` creates a **quick tunnel** that assigns a random, ephemeral
-`*.trycloudflare.com` URL on every start.
+By default, `nemoclaw start` creates a **quick tunnel** that assigns a random, ephemeral `*.trycloudflare.com` URL on every start.
 This is convenient for trying things out but unsuitable for production use.
 The URL changes every time.
 
@@ -35,12 +34,16 @@ A **named tunnel** ties the service to a domain you control in Cloudflare, givin
 
 ## Prerequisites
 
+Install the following before you begin.
+
 - `cloudflared` installed (`brev-setup.sh` installs it automatically; see [brev-setup.sh](../../scripts/brev-setup.sh)).
 - A Cloudflare account with a domain whose DNS is managed by Cloudflare.
 - NemoClaw installed and a sandbox running.
   Follow the [Quickstart](../get-started/quickstart.md).
 
 ## Create a Named Tunnel in Cloudflare
+
+Create the tunnel and copy its token from the Cloudflare Zero Trust dashboard.
 
 1. Open the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com).
 2. Navigate to **Networks → Tunnels → Create a tunnel**.
@@ -50,6 +53,8 @@ A **named tunnel** ties the service to a domain you control in Cloudflare, givin
    It begins with `eyJ…`.
 
 ## Configure a Public Hostname
+
+Map the tunnel to the local dashboard port using a public hostname.
 
 Still in the tunnel configuration:
 
@@ -65,6 +70,8 @@ The full public URL is `https://agent.mycompany.com`.
 
 ## Export Environment Variables
 
+Set the tunnel token so `nemoclaw start` uses the named tunnel instead of a quick tunnel.
+
 ```console
 $ export CLOUDFLARE_TUNNEL_TOKEN=eyJ...
 ```
@@ -74,6 +81,8 @@ The hostname and routing are configured in the Cloudflare dashboard above.
 No local variable is needed for the hostname.
 
 ## Start Services
+
+Run `nemoclaw start` to launch `cloudflared` and any other configured auxiliary services.
 
 ```console
 $ nemoclaw start
@@ -94,19 +103,19 @@ The banner prints the custom domain once `cloudflared` has loaded its ingress co
 
 ## Verify the Tunnel
 
+Confirm that `cloudflared` is running and the tunnel is active.
+
 ```console
 $ nemoclaw status
 ```
 
 Check that the `cloudflared` service shows as running and the public URL matches your domain.
-
 You can also verify from the Cloudflare dashboard under **Networks → Tunnels**.
 The tunnel status should change to **Healthy** within a few seconds of starting.
 
 ## Persisting the Configuration
 
-To avoid exporting the variables on every shell session, add them to your shell profile or a
-`.env` file that is sourced before running `nemoclaw start`:
+To avoid exporting the token on every shell session, add it to a `.env` file sourced before running `nemoclaw start`.
 
 ```bash
 # ~/.nemoclaw/.env  (mode 600 — keep this file private)
@@ -125,31 +134,30 @@ Store it with the same care as an API key — never commit it to source control.
 
 ## Stop the Services
 
+Run `nemoclaw stop` to shut down `cloudflared` and all other auxiliary services.
+
 ```console
 $ nemoclaw stop
 ```
 
 This stops `cloudflared` and any other auxiliary services.
-The Cloudflare tunnel itself remains configured in the dashboard and reconnects automatically
-the next time you run `nemoclaw start` with the same token.
+The Cloudflare tunnel itself remains configured in the dashboard and reconnects automatically the next time you run `nemoclaw start` with the same token.
 
 ## Troubleshooting
 
+Use these steps to diagnose common problems.
+
 **`cloudflared` not found**
-: Install via `scripts/brev-setup.sh` or download directly from the
-  [cloudflared releases page](https://github.com/cloudflare/cloudflared/releases).
+: Install via `scripts/brev-setup.sh` or follow the [cloudflared installation guide](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
 
 **Tunnel shows "Inactive" in the dashboard**
-: Make sure `nemoclaw start` completed without errors and `nemoclaw status` shows
-  `cloudflared` as running.
+: Make sure `nemoclaw start` completed without errors and `nemoclaw status` shows `cloudflared` as running.
 
 **Custom hostname not resolving**
-: Check that the domain's DNS is managed by Cloudflare (nameservers point to Cloudflare)
-  and that the public hostname was saved in the tunnel configuration.
+: Check that the domain's DNS is managed by Cloudflare (nameservers point to Cloudflare) and that the public hostname was saved in the tunnel configuration.
 
 **Quick tunnel still used instead of named tunnel**
-: Verify `CLOUDFLARE_TUNNEL_TOKEN` is exported in the current shell before running
-  `nemoclaw start`.
+: Verify `CLOUDFLARE_TUNNEL_TOKEN` is exported in the current shell before running `nemoclaw start`.
 
 ## Next Steps
 

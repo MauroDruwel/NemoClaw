@@ -10,9 +10,9 @@ import { resolveOpenshell } from "../bin/lib/resolve-openshell";
 import { parseAllowedChatIds, isChatAllowed } from "../bin/lib/chat-filter.js";
 
 describe("service environment", () => {
-  describe("start-services behavior", () => {
-    const scriptPath = join(import.meta.dirname, "../scripts/start-services.sh");
+  const scriptPath = join(import.meta.dirname, "../scripts/start-services.sh");
 
+  describe("start-services behavior", () => {
     it("starts local-only services without NVIDIA_API_KEY", () => {
       const workspace = mkdtempSync(join(tmpdir(), "nemoclaw-services-no-key-"));
       const result = execFileSync("bash", [scriptPath], {
@@ -123,9 +123,11 @@ describe("service environment", () => {
     const getTokenLine = `CLOUDFLARE_TUNNEL_TOKEN="\${CLOUDFLARE_TUNNEL_TOKEN:-}"`;
 
     it("CLOUDFLARE_TUNNEL_TOKEN defaults to empty when unset", () => {
+      const env = { ...process.env };
+      delete env.CLOUDFLARE_TUNNEL_TOKEN;
       const result = execSync(`bash -c '${getTokenLine}; echo "$CLOUDFLARE_TUNNEL_TOKEN"'`, {
         encoding: "utf-8",
-        env: { ...process.env, CLOUDFLARE_TUNNEL_TOKEN: "" },
+        env,
       }).trim();
       expect(result).toBe("");
     });
@@ -139,71 +141,36 @@ describe("service environment", () => {
     });
 
     it("get_tunnel_url returns empty when no log file", () => {
-      const script = `
-PIDDIR="/tmp/test-nonexistent-$$"
-get_tunnel_url() {
-  [ -f "$PIDDIR/cloudflared.log" ] || return 0
-  local host
-  host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \\
-    | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
-  if [ -n "$host" ]; then
-    echo "https://$host"
-  else
-    grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
-  fi
-}
-get_tunnel_url`;
-      const result = execSync(`bash -c '${script.replace(/'/g, "'\\''")}'`, {
+      const piddir = `/tmp/test-nonexistent-${process.pid}`;
+      const result = execSync(`bash -c 'source ${scriptPath}; PIDDIR=${piddir}; get_tunnel_url'`, {
         encoding: "utf-8",
       }).trim();
       expect(result).toBe("");
     });
 
     it("get_tunnel_url parses hostname from named tunnel log", () => {
-      const script = `
-PIDDIR="/tmp/test-named-$$"
-mkdir -p "$PIDDIR"
-echo '2026-01-01T00:00:00Z INF Ingress rule #0: hostname=agent.mycompany.com service=http://localhost:18789' > "$PIDDIR/cloudflared.log"
-get_tunnel_url() {
-  [ -f "$PIDDIR/cloudflared.log" ] || return 0
-  local host
-  host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \\
-    | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
-  if [ -n "$host" ]; then
-    echo "https://$host"
-  else
-    grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
-  fi
-}
-get_tunnel_url
-rm -rf "$PIDDIR"`;
-      const result = execSync(`bash -c '${script.replace(/'/g, "'\\''")}'`, {
+      const piddir = mkdtempSync(join(tmpdir(), "test-named-"));
+      writeFileSync(
+        join(piddir, "cloudflared.log"),
+        "2026-01-01T00:00:00Z INF Ingress rule #0: hostname=agent.mycompany.com service=http://localhost:18789\n",
+      );
+      const result = execSync(`bash -c 'source ${scriptPath}; PIDDIR=${piddir}; get_tunnel_url'`, {
         encoding: "utf-8",
       }).trim();
+      unlinkSync(join(piddir, "cloudflared.log"));
       expect(result).toBe("https://agent.mycompany.com");
     });
 
     it("get_tunnel_url parses quoted hostname from named tunnel log", () => {
-      const script = `
-PIDDIR="/tmp/test-quoted-$$"
-mkdir -p "$PIDDIR"
-echo '2026-01-01T00:00:00Z INF Ingress rule #0: hostname="agent.mycompany.com" service="http://localhost:18789"' > "$PIDDIR/cloudflared.log"
-get_tunnel_url() {
-  [ -f "$PIDDIR/cloudflared.log" ] || return 0
-  local host
-  host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \\
-    | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
-  if [ -n "$host" ]; then
-    echo "https://$host"
-  else
-    grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
-  fi
-}
-get_tunnel_url
-rm -rf "$PIDDIR"`;
-      const result = execSync(`bash -c '${script.replace(/'/g, "'\\''")}'`, {
+      const piddir = mkdtempSync(join(tmpdir(), "test-quoted-"));
+      writeFileSync(
+        join(piddir, "cloudflared.log"),
+        '2026-01-01T00:00:00Z INF Ingress rule #0: hostname="agent.mycompany.com" service="http://localhost:18789"\n',
+      );
+      const result = execSync(`bash -c 'source ${scriptPath}; PIDDIR=${piddir}; get_tunnel_url'`, {
         encoding: "utf-8",
       }).trim();
+      unlinkSync(join(piddir, "cloudflared.log"));
       expect(result).toBe("https://agent.mycompany.com");
     });
   });
