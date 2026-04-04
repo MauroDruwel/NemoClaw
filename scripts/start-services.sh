@@ -96,13 +96,17 @@ stop_service() {
 }
 
 # Returns the active tunnel URL.
-# Named tunnels: cloudflared logs "hostname=<domain>" when loading ingress rules.
+# Named tunnels via token: cloudflared logs hostname inside a JSON config= line,
+#   e.g. config="{\"ingress\":[{\"hostname\":\"example.com\",\"service\":\"http://localhost:18789\"},...}],...}"
+#   We match the ingress entry whose service targets DASHBOARD_PORT to handle multi-route tunnels.
 # Quick tunnels: cloudflared logs the randomly-assigned *.trycloudflare.com URL.
 get_tunnel_url() {
   [ -f "$PIDDIR/cloudflared.log" ] || return 0
   local host
-  host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \
-    | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
+  # Named tunnel via token: find the ingress entry for our port, extract its hostname.
+  host="$(grep "localhost:${DASHBOARD_PORT}" "$PIDDIR/cloudflared.log" 2>/dev/null \
+    | grep -o '\\"hostname\\":\\"[^\\"]*\\"' \
+    | sed 's/\\"hostname\\":\\"//;s/\\"//' | grep -v '^$' | head -1 || true)"
   if [ -n "$host" ]; then
     echo "https://${host}"
   else
