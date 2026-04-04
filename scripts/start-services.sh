@@ -100,11 +100,11 @@ stop_service() {
 # Quick tunnels: cloudflared logs the randomly-assigned *.trycloudflare.com URL.
 get_tunnel_url() {
   [ -f "$PIDDIR/cloudflared.log" ] || return 0
-  if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
-    local host
-    host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \
-      | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
-    [ -n "$host" ] && echo "https://${host}"
+  local host
+  host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \
+    | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
+  if [ -n "$host" ]; then
+    echo "https://${host}"
   else
     grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
   fi
