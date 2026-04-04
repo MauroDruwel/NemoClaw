@@ -140,9 +140,16 @@ describe("service environment", () => {
 
     it("get_tunnel_url returns empty when no log file", () => {
       const script = `
+CLOUDFLARE_TUNNEL_TOKEN=""
 PIDDIR="/tmp/test-nonexistent-$$"
 get_tunnel_url() {
-  if [ -f "$PIDDIR/cloudflared.log" ]; then
+  [ -f "$PIDDIR/cloudflared.log" ] || return
+  if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+    local host
+    host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \\
+      | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
+    [ -n "$host" ] && echo "https://$host"
+  else
     grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
   fi
 }
@@ -151,6 +158,57 @@ get_tunnel_url`;
         encoding: "utf-8",
       }).trim();
       expect(result).toBe("");
+    });
+
+    it("get_tunnel_url parses hostname from named tunnel log", () => {
+      const tmpLog = `/tmp/test-cloudflared-named-$$.log`;
+      const script = `
+CLOUDFLARE_TUNNEL_TOKEN="eyJtest"
+PIDDIR="/tmp/test-named-$$"
+mkdir -p "$PIDDIR"
+echo '2026-01-01T00:00:00Z INF Ingress rule #0: hostname=agent.mycompany.com service=http://localhost:18789' > "$PIDDIR/cloudflared.log"
+get_tunnel_url() {
+  [ -f "$PIDDIR/cloudflared.log" ] || return
+  if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+    local host
+    host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \\
+      | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
+    [ -n "$host" ] && echo "https://$host"
+  else
+    grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
+  fi
+}
+get_tunnel_url
+rm -rf "$PIDDIR"`;
+      const result = execSync(`bash -c '${script.replace(/'/g, "'\\''")}'`, {
+        encoding: "utf-8",
+      }).trim();
+      expect(result).toBe("https://agent.mycompany.com");
+    });
+
+    it("get_tunnel_url parses quoted hostname from named tunnel log", () => {
+      const script = `
+CLOUDFLARE_TUNNEL_TOKEN="eyJtest"
+PIDDIR="/tmp/test-quoted-$$"
+mkdir -p "$PIDDIR"
+echo '2026-01-01T00:00:00Z INF Ingress rule #0: hostname="agent.mycompany.com" service="http://localhost:18789"' > "$PIDDIR/cloudflared.log"
+get_tunnel_url() {
+  [ -f "$PIDDIR/cloudflared.log" ] || return
+  if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+    local host
+    host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \\
+      | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
+    [ -n "$host" ] && echo "https://$host"
+  else
+    grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
+  fi
+}
+get_tunnel_url
+rm -rf "$PIDDIR"`;
+      const result = execSync(`bash -c '${script.replace(/'/g, "'\\''")}'`, {
+        encoding: "utf-8",
+      }).trim();
+      expect(result).toBe("https://agent.mycompany.com");
     });
   });
 

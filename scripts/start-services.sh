@@ -95,10 +95,17 @@ stop_service() {
   fi
 }
 
-# Returns the randomly-assigned trycloudflare.com URL (quick tunnel only).
-# Named tunnels have no local URL to display — the hostname is in the dashboard.
+# Returns the active tunnel URL.
+# Named tunnels: cloudflared logs "hostname=<domain>" when loading ingress rules.
+# Quick tunnels: cloudflared logs the randomly-assigned *.trycloudflare.com URL.
 get_tunnel_url() {
-  if [ -f "$PIDDIR/cloudflared.log" ]; then
+  [ -f "$PIDDIR/cloudflared.log" ] || return
+  if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+    local host
+    host="$(grep -o 'hostname=[^[:space:],]*' "$PIDDIR/cloudflared.log" 2>/dev/null \
+      | sed 's/hostname=//;s/"//g' | grep -v '^$' | head -1 || true)"
+    [ -n "$host" ] && echo "https://${host}"
+  else
     grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
   fi
 }
@@ -180,9 +187,8 @@ do_start() {
     warn "cloudflared not found — no public URL. Install: brev-setup.sh or manually."
   fi
 
-  # Wait for cloudflared to publish URL (quick tunnels only — named tunnels
-  # have no local URL to poll).
-  if is_running cloudflared && [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+  # Wait for cloudflared to publish URL (both quick and named tunnels).
+  if is_running cloudflared; then
     info "Waiting for tunnel URL..."
     for _ in $(seq 1 15); do
       local url

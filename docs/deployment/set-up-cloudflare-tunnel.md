@@ -76,12 +76,13 @@ variable is needed.
 $ nemoclaw start
 ```
 
-The banner confirms services are running. For named tunnels the public URL is not shown locally — verify it in the Cloudflare dashboard under **Networks → Tunnels**:
+The banner prints the custom domain once `cloudflared` has loaded its ingress configuration:
 
 ```
   ┌─────────────────────────────────────────────────────┐
   │  NemoClaw Services                                  │
   │                                                     │
+  │  Public URL:  https://agent.mycompany.com           │
   │  Telegram:    not started (no token)                │
   │                                                     │
   │  Run 'openshell term' to monitor egress approvals   │
