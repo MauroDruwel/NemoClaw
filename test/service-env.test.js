@@ -141,37 +141,50 @@ describe("service environment", () => {
     });
 
     it("get_tunnel_url returns empty when no log file", () => {
-      const piddir = `/tmp/test-nonexistent-${process.pid}`;
-      const result = execSync(`bash -c 'source ${scriptPath}; PIDDIR=${piddir}; get_tunnel_url'`, {
-        encoding: "utf-8",
-      }).trim();
-      expect(result).toBe("");
+      const piddir = mkdtempSync(join(tmpdir(), "test-nonexistent-"));
+      try {
+        const result = execSync(
+          `bash -c 'source "${scriptPath}"; PIDDIR="${piddir}"; get_tunnel_url'`,
+          { encoding: "utf-8" },
+        ).trim();
+        expect(result).toBe("");
+      } finally {
+        execFileSync("rm", ["-rf", piddir]);
+      }
     });
 
     it("get_tunnel_url parses hostname from named tunnel log", () => {
       const piddir = mkdtempSync(join(tmpdir(), "test-named-"));
-      writeFileSync(
-        join(piddir, "cloudflared.log"),
-        "2026-01-01T00:00:00Z INF Ingress rule #0: hostname=agent.mycompany.com service=http://localhost:18789\n",
-      );
-      const result = execSync(`bash -c 'source ${scriptPath}; PIDDIR=${piddir}; get_tunnel_url'`, {
-        encoding: "utf-8",
-      }).trim();
-      unlinkSync(join(piddir, "cloudflared.log"));
-      expect(result).toBe("https://agent.mycompany.com");
+      try {
+        writeFileSync(
+          join(piddir, "cloudflared.log"),
+          "2026-01-01T00:00:00Z INF Ingress rule #0: hostname=agent.mycompany.com service=http://localhost:18789\n",
+        );
+        const result = execSync(
+          `bash -c 'source "${scriptPath}"; PIDDIR="${piddir}"; get_tunnel_url'`,
+          { encoding: "utf-8" },
+        ).trim();
+        expect(result).toBe("https://agent.mycompany.com");
+      } finally {
+        execFileSync("rm", ["-rf", piddir]);
+      }
     });
 
     it("get_tunnel_url parses quoted hostname from named tunnel log", () => {
       const piddir = mkdtempSync(join(tmpdir(), "test-quoted-"));
-      writeFileSync(
-        join(piddir, "cloudflared.log"),
-        '2026-01-01T00:00:00Z INF Ingress rule #0: hostname="agent.mycompany.com" service="http://localhost:18789"\n',
-      );
-      const result = execSync(`bash -c 'source ${scriptPath}; PIDDIR=${piddir}; get_tunnel_url'`, {
-        encoding: "utf-8",
-      }).trim();
-      unlinkSync(join(piddir, "cloudflared.log"));
-      expect(result).toBe("https://agent.mycompany.com");
+      try {
+        writeFileSync(
+          join(piddir, "cloudflared.log"),
+          '2026-01-01T00:00:00Z INF Ingress rule #0: hostname="agent.mycompany.com" service="http://localhost:18789"\n',
+        );
+        const result = execSync(
+          `bash -c 'source "${scriptPath}"; PIDDIR="${piddir}"; get_tunnel_url'`,
+          { encoding: "utf-8" },
+        ).trim();
+        expect(result).toBe("https://agent.mycompany.com");
+      } finally {
+        execFileSync("rm", ["-rf", piddir]);
+      }
     });
   });
 
