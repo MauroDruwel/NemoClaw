@@ -64,12 +64,11 @@ The full public URL will be `https://agent.mycompany.com`.
 
 ```console
 $ export CLOUDFLARE_TUNNEL_TOKEN=eyJ...
-$ export CLOUDFLARE_TUNNEL_HOSTNAME=agent.mycompany.com   # optional — for display only
 ```
 
 `CLOUDFLARE_TUNNEL_TOKEN` switches `nemoclaw start` from quick-tunnel mode to named-tunnel
-mode. `CLOUDFLARE_TUNNEL_HOSTNAME` is only used for the banner and `nemoclaw status` output;
-the actual routing is controlled by the Cloudflare dashboard configuration above.
+mode. The hostname and routing are configured in the Cloudflare dashboard above — no local
+variable is needed.
 
 ## Step 4: Start Services
 
@@ -77,13 +76,12 @@ the actual routing is controlled by the Cloudflare dashboard configuration above
 $ nemoclaw start
 ```
 
-The banner prints the custom domain:
+The banner confirms services are running. For named tunnels the public URL is not shown locally — verify it in the Cloudflare dashboard under **Networks → Tunnels**:
 
 ```
   ┌─────────────────────────────────────────────────────┐
   │  NemoClaw Services                                  │
   │                                                     │
-  │  Public URL:  https://agent.mycompany.com           │
   │  Telegram:    not started (no token)                │
   │                                                     │
   │  Run 'openshell term' to monitor egress approvals   │
@@ -109,7 +107,6 @@ To avoid exporting the variables on every shell session, add them to your shell 
 ```bash
 # ~/.nemoclaw/.env  (mode 600 — keep this file private)
 export CLOUDFLARE_TUNNEL_TOKEN=eyJ...
-export CLOUDFLARE_TUNNEL_HOSTNAME=agent.mycompany.com
 ```
 
 ```console

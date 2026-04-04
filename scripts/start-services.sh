@@ -18,7 +18,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DASHBOARD_PORT="${DASHBOARD_PORT:-18789}"
 CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
-CLOUDFLARE_TUNNEL_HOSTNAME="${CLOUDFLARE_TUNNEL_HOSTNAME:-}"
 
 # ── Parse flags ──────────────────────────────────────────────────
 SANDBOX_NAME="${NEMOCLAW_SANDBOX:-${SANDBOX_NAME:-default}}"
@@ -96,12 +95,10 @@ stop_service() {
   fi
 }
 
-# Returns the active tunnel URL: custom hostname (named tunnel) or the
-# randomly-assigned trycloudflare.com URL (quick tunnel).
+# Returns the randomly-assigned trycloudflare.com URL (quick tunnel only).
+# Named tunnels have no local URL to display — the hostname is in the dashboard.
 get_tunnel_url() {
-  if [ -n "$CLOUDFLARE_TUNNEL_HOSTNAME" ]; then
-    echo "https://${CLOUDFLARE_TUNNEL_HOSTNAME}"
-  elif [ -f "$PIDDIR/cloudflared.log" ]; then
+  if [ -f "$PIDDIR/cloudflared.log" ]; then
     grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
   fi
 }
@@ -184,7 +181,7 @@ do_start() {
   fi
 
   # Wait for cloudflared to publish URL (quick tunnels only — named tunnels
-  # use a hostname already known via CLOUDFLARE_TUNNEL_HOSTNAME).
+  # have no local URL to poll).
   if is_running cloudflared && [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
     info "Waiting for tunnel URL..."
     for _ in $(seq 1 15); do
