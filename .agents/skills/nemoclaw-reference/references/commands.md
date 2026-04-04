@@ -131,8 +131,7 @@ $ nemoclaw start
 | Environment variable | Required | Description |
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | For Telegram bridge | Bot token from @BotFather. The bridge starts only when this is set. |
-| `CLOUDFLARE_TUNNEL_TOKEN` | For named tunnel | Token from the Cloudflare Zero Trust dashboard. When set, uses a named tunnel instead of a random `*.trycloudflare.com` quick tunnel. |
-| `CLOUDFLARE_TUNNEL_HOSTNAME` | Optional | Custom domain shown in the banner and `nemoclaw status` output (e.g. `agent.mycompany.com`). Routing is configured in the Cloudflare dashboard. |
+| `CLOUDFLARE_TUNNEL_TOKEN` | For named tunnel | Token from the Cloudflare Zero Trust dashboard. When set, uses a named tunnel instead of a random `*.trycloudflare.com` quick tunnel. The hostname is configured in the dashboard. |
 
 ### `nemoclaw stop`
 
