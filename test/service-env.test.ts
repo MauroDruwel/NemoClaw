@@ -167,13 +167,34 @@ describe("service environment", () => {
       }
     });
 
+    it("get_tunnel_url parses hostname when cloudflared emits a space after the comma", () => {
+      const piddir = mkdtempSync(join(tmpdir(), "test-named-space-"));
+      try {
+        // Real cloudflared output uses pretty-printed JSON with a space after each comma:
+        //   config="{\"ingress\":[{\"hostname\":\"...\", \"service\":\"http://localhost:PORT\"}]}"
+        //                                                           ^ space here
+        writeFileSync(
+          join(piddir, "cloudflared.log"),
+          `2026-01-01T00:00:00Z INF Updated to new configuration config="{\\"ingress\\":[{\\"hostname\\":\\"agent.mycompany.com\\", \\"service\\":\\"http://localhost:18789\\"}]}" version=1\n`,
+        );
+        const result = execSync(
+          `bash -c 'source "${scriptPath}"; PIDDIR="${piddir}"; get_tunnel_url'`,
+          { encoding: "utf-8" },
+        ).trim();
+        expect(result).toBe("https://agent.mycompany.com");
+      } finally {
+        execFileSync("rm", ["-rf", piddir]);
+      }
+    });
+
     it("get_tunnel_url picks correct hostname in multi-route named tunnel log", () => {
       const piddir = mkdtempSync(join(tmpdir(), "test-multiroute-"));
       try {
         // Multi-route tunnel: only the ingress entry matching DASHBOARD_PORT should be used.
+        // Uses real cloudflared format with spaces after commas.
         writeFileSync(
           join(piddir, "cloudflared.log"),
-          `2026-01-01T00:00:00Z INF Tunnel registered config="{\\"ingress\\":[{\\"hostname\\":\\"other.example.com\\",\\"service\\":\\"http://localhost:9999\\"},{\\"hostname\\":\\"agent.mycompany.com\\",\\"service\\":\\"http://localhost:18789\\"}]}"\n`,
+          `2026-01-01T00:00:00Z INF Updated to new configuration config="{\\"ingress\\":[{\\"hostname\\":\\"other.example.com\\", \\"service\\":\\"http://localhost:9999\\"}, {\\"hostname\\":\\"agent.mycompany.com\\", \\"service\\":\\"http://localhost:18789\\"}]}" version=1\n`,
         );
         const result = execSync(
           `bash -c 'source "${scriptPath}"; PIDDIR="${piddir}"; get_tunnel_url'`,

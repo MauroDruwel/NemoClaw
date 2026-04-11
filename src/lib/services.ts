@@ -209,7 +209,7 @@ function stopService(pidDir: string, name: ServiceName): void {
  *
  * Quick tunnels log a randomly-assigned *.trycloudflare.com URL.
  */
-function getTunnelUrl(pidDir: string, dashboardPort: number): string {
+export function getTunnelUrl(pidDir: string, dashboardPort: number): string {
   const logFile = join(pidDir, "cloudflared.log");
   if (!existsSync(logFile)) return "";
   const log = readFileSync(logFile, "utf-8");

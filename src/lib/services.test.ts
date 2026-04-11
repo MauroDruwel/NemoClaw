@@ -9,9 +9,56 @@ import { tmpdir } from "node:os";
 // Import from compiled dist/ so coverage is attributed correctly.
 import {
   getServiceStatuses,
+  getTunnelUrl,
   showStatus,
   stopAll,
 } from "../../dist/lib/services";
+
+describe("getTunnelUrl", () => {
+  let pidDir: string;
+
+  beforeEach(() => {
+    pidDir = mkdtempSync(join(tmpdir(), "nemoclaw-svc-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(pidDir, { recursive: true, force: true });
+  });
+
+  it("returns empty string when log file does not exist", () => {
+    expect(getTunnelUrl(pidDir, 18789)).toBe("");
+  });
+
+  it("parses quick tunnel URL from log", () => {
+    writeFileSync(join(pidDir, "cloudflared.log"), "https://abc-def.trycloudflare.com\n");
+    expect(getTunnelUrl(pidDir, 18789)).toBe("https://abc-def.trycloudflare.com");
+  });
+
+  it("parses hostname from named tunnel config line (no space after comma)", () => {
+    writeFileSync(
+      join(pidDir, "cloudflared.log"),
+      `2026-01-01T00:00:00Z INF Tunnel registered config="{\\"ingress\\":[{\\"hostname\\":\\"agent.mycompany.com\\",\\"service\\":\\"http://localhost:18789\\"}]}"\n`,
+    );
+    expect(getTunnelUrl(pidDir, 18789)).toBe("https://agent.mycompany.com");
+  });
+
+  it("parses hostname from named tunnel config line with space after comma (real cloudflared format)", () => {
+    // Real cloudflared output uses pretty-printed JSON with a space after each comma.
+    writeFileSync(
+      join(pidDir, "cloudflared.log"),
+      `2026-01-01T00:00:00Z INF Updated to new configuration config="{\\"ingress\\":[{\\"hostname\\":\\"agent.mycompany.com\\", \\"service\\":\\"http://localhost:18789\\"}]}" version=1\n`,
+    );
+    expect(getTunnelUrl(pidDir, 18789)).toBe("https://agent.mycompany.com");
+  });
+
+  it("picks the ingress entry matching dashboardPort in a multi-route tunnel", () => {
+    writeFileSync(
+      join(pidDir, "cloudflared.log"),
+      `2026-01-01T00:00:00Z INF Updated to new configuration config="{\\"ingress\\":[{\\"hostname\\":\\"other.example.com\\", \\"service\\":\\"http://localhost:9999\\"}, {\\"hostname\\":\\"agent.mycompany.com\\", \\"service\\":\\"http://localhost:18789\\"}]}" version=1\n`,
+    );
+    expect(getTunnelUrl(pidDir, 18789)).toBe("https://agent.mycompany.com");
+  });
+});
 
 describe("getServiceStatuses", () => {
   let pidDir: string;

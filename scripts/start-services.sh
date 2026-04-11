@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICES_JS="${SCRIPT_DIR}/../dist/lib/services.js"
+
 DASHBOARD_PORT="${DASHBOARD_PORT:-18789}"
 CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
 
@@ -95,24 +98,18 @@ stop_service() {
   fi
 }
 
-# Returns the active tunnel URL.
-# Named tunnels via token: cloudflared logs hostname inside a JSON config= line,
-#   e.g. config="{\"ingress\":[{\"hostname\":\"example.com\",\"service\":\"http://localhost:18789\"},...}],...}"
-#   We match the ingress entry whose service targets DASHBOARD_PORT to handle multi-route tunnels.
-# Quick tunnels: cloudflared logs the randomly-assigned *.trycloudflare.com URL.
+# Returns the active tunnel URL by delegating to the compiled TypeScript
+# implementation (dist/lib/services.js), which is the canonical parser.
+# Falls back to a plain grep for quick tunnels if Node or the dist is unavailable.
 get_tunnel_url() {
   [ -f "$PIDDIR/cloudflared.log" ] || return 0
-  local host
-  # Named tunnel: extract the ingress entry whose service targets DASHBOARD_PORT,
-  # then get its hostname.  grep -o matches the hostname+service pair so that
-  # multi-route tunnels return the correct hostname even when other entries appear
-  # first on the same config= log line.
-  host="$(grep -o "\\\\\"hostname\\\\\":\\\\\"[^\\\\\"]*\\\\\",\\\\\"service\\\\\":\\\\\"http://localhost:${DASHBOARD_PORT}[^\\\\\"]*\\\\\"" \
-    "$PIDDIR/cloudflared.log" 2>/dev/null \
-    | grep -o '\\"hostname\\":\\"[^\\"]*\\"' \
-    | sed 's/\\"hostname\\":\\"//;s/\\"//' | grep -v '^$' | head -1 || true)"
-  if [ -n "$host" ]; then
-    echo "https://${host}"
+  if command -v node >/dev/null 2>&1 && [ -f "$SERVICES_JS" ]; then
+    _SERVICES_JS="$SERVICES_JS" _PIDDIR="$PIDDIR" _PORT="$DASHBOARD_PORT" \
+      node -e "
+        const svc = require(process.env._SERVICES_JS);
+        const url = svc.getTunnelUrl(process.env._PIDDIR, parseInt(process.env._PORT, 10));
+        if (url) process.stdout.write(url);
+      " 2>/dev/null || true
   else
     grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true
   fi
