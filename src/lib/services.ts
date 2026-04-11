@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execFileSync, execSync, spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -12,7 +12,6 @@ import {
   unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
-import { platform } from "node:os";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,6 +26,12 @@ export interface ServiceOptions {
   repoDir?: string;
   /** Override PID directory (default: /tmp/nemoclaw-services-{sandbox}). */
   pidDir?: string;
+  /**
+   * Cloudflare named tunnel token from the Zero Trust dashboard.
+   * When set, cloudflared runs as a named tunnel (`cloudflared tunnel run --token TOKEN`)
+   * instead of a quick tunnel. Falls back to CLOUDFLARE_TUNNEL_TOKEN env var.
+   */
+  cloudflareTunnelToken?: string;
 }
 
 export interface ServiceStatus {
@@ -101,7 +106,7 @@ function removePid(pidDir: string, name: string): void {
 // Service lifecycle
 // ---------------------------------------------------------------------------
 
-const SERVICE_NAMES = ["telegram-bridge", "cloudflared"] as const;
+const SERVICE_NAMES = ["cloudflared"] as const;
 type ServiceName = (typeof SERVICE_NAMES)[number];
 
 function startService(
@@ -192,6 +197,50 @@ function stopService(pidDir: string, name: ServiceName): void {
 }
 
 // ---------------------------------------------------------------------------
+// Tunnel URL helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the active tunnel URL from the cloudflared log.
+ *
+ * Named tunnels (CLOUDFLARE_TUNNEL_TOKEN) log the ingress config as a
+ * JSON-escaped string on a config= log line, e.g.:
+ *   config="{\"ingress\":[{\"hostname\":\"foo.com\",\"service\":\"http://localhost:18789\"}]}"
+ *
+ * Quick tunnels log a randomly-assigned *.trycloudflare.com URL.
+ */
+function getTunnelUrl(pidDir: string, dashboardPort: number): string {
+  const logFile = join(pidDir, "cloudflared.log");
+  if (!existsSync(logFile)) return "";
+  const log = readFileSync(logFile, "utf-8");
+
+  // Named tunnel: find the ingress entry whose service targets dashboardPort,
+  // then extract its hostname.  Use lastIndexOf so that in multi-route tunnels
+  // we find the entry immediately before the matching service field.
+  const portStr = String(dashboardPort);
+  for (const line of log.split("\n")) {
+    // The log file contains literal \" sequences (backslash + double-quote).
+    // Template-literal \\" produces that two-char sequence in the JS string.
+    const serviceKey = `\\"service\\":\\"http://localhost:${portStr}`;
+    const sIdx = line.indexOf(serviceKey);
+    if (sIdx === -1) continue;
+    const prefix = line.slice(0, sIdx);
+    const hostnameKey = `\\"hostname\\":\\"`;
+    const hIdx = prefix.lastIndexOf(hostnameKey);
+    if (hIdx === -1) continue;
+    const afterHostname = prefix.slice(hIdx + hostnameKey.length);
+    const endIdx = afterHostname.indexOf(`\\"`);
+    if (endIdx === -1) continue;
+    const hostname = afterHostname.slice(0, endIdx);
+    if (hostname) return `https://${hostname}`;
+  }
+
+  // Quick tunnel
+  const quick = /https:\/\/[a-z0-9-]*\.trycloudflare\.com/.exec(log);
+  return quick ? quick[0] : "";
+}
+
+// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
@@ -228,12 +277,11 @@ export function showStatus(opts: ServiceOptions = {}): void {
   console.log("");
 
   // Only show tunnel URL if cloudflared is actually running
-  const logFile = join(pidDir, "cloudflared.log");
-  if (isRunning(pidDir, "cloudflared") && existsSync(logFile)) {
-    const log = readFileSync(logFile, "utf-8");
-    const match = /https:\/\/[a-z0-9-]*\.trycloudflare\.com/.exec(log);
-    if (match) {
-      info(`Public URL: ${match[0]}`);
+  if (isRunning(pidDir, "cloudflared")) {
+    const dashboardPort = opts.dashboardPort ?? (Number(process.env.DASHBOARD_PORT) || 18789);
+    const url = getTunnelUrl(pidDir, dashboardPort);
+    if (url) {
+      info(`Public URL: ${url}`);
     }
   }
 }
@@ -242,90 +290,54 @@ export function stopAll(opts: ServiceOptions = {}): void {
   const pidDir = resolvePidDir(opts);
   ensurePidDir(pidDir);
   stopService(pidDir, "cloudflared");
-  stopService(pidDir, "telegram-bridge");
   info("All services stopped.");
 }
 
 export async function startAll(opts: ServiceOptions = {}): Promise<void> {
   const pidDir = resolvePidDir(opts);
   const dashboardPort = opts.dashboardPort ?? (Number(process.env.DASHBOARD_PORT) || 18789);
-  // Compiled location: dist/lib/services.js → repo root is 2 levels up
-  const repoDir = opts.repoDir ?? join(__dirname, "..", "..");
-
-  if (!process.env.TELEGRAM_BOT_TOKEN) {
-    warn("TELEGRAM_BOT_TOKEN not set — Telegram bridge will not start.");
-    warn("Create a bot via @BotFather on Telegram and set the token.");
-  } else if (!process.env.NVIDIA_API_KEY) {
-    warn("NVIDIA_API_KEY not set — Telegram bridge will not start.");
-    warn("Set NVIDIA_API_KEY if you want Telegram requests to reach inference.");
-  }
-
-  // Warn if no sandbox is ready
-  try {
-    const output = execFileSync("openshell", ["sandbox", "list"], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    if (!output.includes("Ready")) {
-      warn("No sandbox in Ready state. Telegram bridge may not work until sandbox is running.");
-    }
-  } catch {
-    /* openshell not installed or no ready sandbox — skip check */
-  }
 
   ensurePidDir(pidDir);
 
-  // WSL2 ships with broken IPv6 routing — force IPv4-first DNS for bridge processes
-  if (platform() === "linux") {
-    const isWSL =
-      !!process.env.WSL_DISTRO_NAME ||
-      !!process.env.WSL_INTEROP ||
-      (existsSync("/proc/version") &&
-        readFileSync("/proc/version", "utf-8").toLowerCase().includes("microsoft"));
-    if (isWSL) {
-      const existing = process.env.NODE_OPTIONS ?? "";
-      process.env.NODE_OPTIONS = `${existing ? existing + " " : ""}--dns-result-order=ipv4first`;
-      info("WSL2 detected — setting --dns-result-order=ipv4first for Node.js bridge processes");
-    }
-  }
-
-  // Telegram bridge (only if both token and API key are set)
-  if (process.env.TELEGRAM_BOT_TOKEN && process.env.NVIDIA_API_KEY) {
-    const sandboxName =
-      opts.sandboxName ?? process.env.NEMOCLAW_SANDBOX ?? process.env.SANDBOX_NAME ?? "default";
-    startService(
-      pidDir,
-      "telegram-bridge",
-      "node",
-      [join(repoDir, "scripts", "telegram-bridge.js")],
-      { SANDBOX_NAME: sandboxName },
-    );
-  }
+  // Messaging (Telegram, Discord, Slack) is now handled natively by OpenClaw
+  // inside the sandbox via the OpenShell provider/placeholder/L7-proxy pipeline.
+  // No host-side bridge processes are needed. See: PR #1081.
 
   // cloudflared tunnel
+  const tunnelToken =
+    opts.cloudflareTunnelToken ?? process.env.CLOUDFLARE_TUNNEL_TOKEN ?? "";
+
   try {
     execSync("command -v cloudflared", {
       stdio: ["ignore", "ignore", "ignore"],
     });
-    startService(pidDir, "cloudflared", "cloudflared", [
-      "tunnel",
-      "--url",
-      `http://localhost:${String(dashboardPort)}`,
-    ]);
+    if (tunnelToken) {
+      // Named tunnel — routes and hostname are configured in the Cloudflare
+      // Zero Trust dashboard; no local --url flag needed.
+      startService(pidDir, "cloudflared", "cloudflared", [
+        "tunnel",
+        "run",
+        "--token",
+        tunnelToken,
+      ]);
+    } else {
+      // Quick tunnel — assigns a random *.trycloudflare.com URL.
+      startService(pidDir, "cloudflared", "cloudflared", [
+        "tunnel",
+        "--url",
+        `http://localhost:${String(dashboardPort)}`,
+      ]);
+    }
   } catch {
     warn("cloudflared not found — no public URL. Install cloudflared manually if you need one.");
   }
 
-  // Wait for cloudflared URL
+  // Wait for cloudflared URL (works for both named and quick tunnels)
   if (isRunning(pidDir, "cloudflared")) {
     info("Waiting for tunnel URL...");
-    const logFile = join(pidDir, "cloudflared.log");
     for (let i = 0; i < 15; i++) {
-      if (existsSync(logFile)) {
-        const log = readFileSync(logFile, "utf-8");
-        if (/https:\/\/[a-z0-9-]*\.trycloudflare\.com/.test(log)) {
-          break;
-        }
+      if (getTunnelUrl(pidDir, dashboardPort)) {
+        break;
       }
       await new Promise((resolve) => {
         setTimeout(resolve, 1000);
@@ -339,25 +351,15 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
   console.log("  │  NemoClaw Services                                  │");
   console.log("  │                                                     │");
 
-  let tunnelUrl = "";
-  const cfLogFile = join(pidDir, "cloudflared.log");
-  if (isRunning(pidDir, "cloudflared") && existsSync(cfLogFile)) {
-    const log = readFileSync(cfLogFile, "utf-8");
-    const match = /https:\/\/[a-z0-9-]*\.trycloudflare\.com/.exec(log);
-    if (match) {
-      tunnelUrl = match[0];
-    }
-  }
+  const tunnelUrl = isRunning(pidDir, "cloudflared")
+    ? getTunnelUrl(pidDir, dashboardPort)
+    : "";
 
   if (tunnelUrl) {
     console.log(`  │  Public URL:  ${tunnelUrl.padEnd(40)}│`);
   }
 
-  if (isRunning(pidDir, "telegram-bridge")) {
-    console.log("  │  Telegram:    bridge running                        │");
-  } else {
-    console.log("  │  Telegram:    not started (no token)                │");
-  }
+  console.log("  │  Messaging:   via OpenClaw native channels (if configured) │");
 
   console.log("  │                                                     │");
   console.log("  │  Run 'openshell term' to monitor egress approvals   │");
