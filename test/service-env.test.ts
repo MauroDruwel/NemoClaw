@@ -43,6 +43,61 @@ describe("service environment", () => {
         execFileSync("rm", ["-rf", shimDir]);
       }
     });
+
+    it("do_start calls cloudflared with named tunnel args when CLOUDFLARE_TUNNEL_TOKEN is set", () => {
+      const sandboxName = `test-named-${process.pid}`;
+      const pidDir = `/tmp/nemoclaw-services-${sandboxName}`;
+      const shimDir = mkdtempSync(join(tmpdir(), "nemoclaw-shim-named-"));
+      try {
+        // Shim records its argv in the log (stdout is redirected there by start_service
+        // via nohup). Emits a trycloudflare URL so the wait loop exits immediately.
+        writeFileSync(
+          join(shimDir, "cloudflared"),
+          `#!/bin/sh\necho "called-with: $*"\necho 'https://test-named.trycloudflare.com'\nexit 0\n`,
+          { mode: 0o755 },
+        );
+        execFileSync("bash", [scriptPath], {
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            PATH: `${shimDir}:${process.env.PATH ?? ""}`,
+            SANDBOX_NAME: sandboxName,
+            CLOUDFLARE_TUNNEL_TOKEN: "eyJtest-token",
+          },
+        });
+        const log = readFileSync(join(pidDir, "cloudflared.log"), "utf-8");
+        expect(log).toContain("called-with: tunnel run --token eyJtest-token");
+      } finally {
+        execFileSync("rm", ["-rf", shimDir, pidDir]);
+      }
+    });
+
+    it("do_start calls cloudflared with quick tunnel args when CLOUDFLARE_TUNNEL_TOKEN is unset", () => {
+      const sandboxName = `test-quick-${process.pid}`;
+      const pidDir = `/tmp/nemoclaw-services-${sandboxName}`;
+      const shimDir = mkdtempSync(join(tmpdir(), "nemoclaw-shim-quick-"));
+      try {
+        writeFileSync(
+          join(shimDir, "cloudflared"),
+          `#!/bin/sh\necho "called-with: $*"\necho 'https://test-quick.trycloudflare.com'\nexit 0\n`,
+          { mode: 0o755 },
+        );
+        const env = { ...process.env };
+        delete env.CLOUDFLARE_TUNNEL_TOKEN;
+        execFileSync("bash", [scriptPath], {
+          encoding: "utf-8",
+          env: {
+            ...env,
+            PATH: `${shimDir}:${process.env.PATH ?? ""}`,
+            SANDBOX_NAME: sandboxName,
+          },
+        });
+        const log = readFileSync(join(pidDir, "cloudflared.log"), "utf-8");
+        expect(log).toContain("called-with: tunnel --url http://localhost:18789");
+      } finally {
+        execFileSync("rm", ["-rf", shimDir, pidDir]);
+      }
+    });
   });
 
   describe("resolveOpenshell logic", () => {
