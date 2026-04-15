@@ -95,7 +95,7 @@ The banner prints the custom domain once `cloudflared` has loaded its ingress co
   │  NemoClaw Services                                  │
   │                                                     │
   │  Public URL:  https://agent.mycompany.com           │
-  │  Telegram:    not started (no token)                │
+  │  Messaging:   via OpenClaw native channels (if configured) │
   │                                                     │
   │  Run 'openshell term' to monitor egress approvals   │
   └─────────────────────────────────────────────────────┘
