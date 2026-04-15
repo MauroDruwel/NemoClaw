@@ -149,28 +149,45 @@ do_start() {
     tunnel_url="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$PIDDIR/cloudflared.log" 2>/dev/null | head -1 || true)"
   fi
 
-  # Expand box width if the URL is longer than the default inner width (53)
+  # Compute box inner width: max(minInner, longest_content + 2), capped at terminal width - 4.
+  # The -4 accounts for the two-space indent and the │ border on each side.
+  local url_label="  Public URL:  "
+  local messaging_text="  Messaging:   via OpenClaw native channels (if configured)"
+  local footer_text="  Run 'openshell term' to monitor egress approvals"
+  local title_text="  NemoClaw Services"
+
   local min_inner=53
   local inner=$min_inner
+
+  local messaging_inner=$(( ${#messaging_text} + 2 ))
+  [ "$messaging_inner" -gt "$inner" ] && inner=$messaging_inner
+
+  local footer_inner=$(( ${#footer_text} + 2 ))
+  [ "$footer_inner" -gt "$inner" ] && inner=$footer_inner
+
   if [ -n "$tunnel_url" ]; then
-    local url_inner=$((${#tunnel_url} + 17)) # "  Public URL:  " = 15 chars + 2 trailing spaces
+    local url_inner=$(( ${#url_label} + ${#tunnel_url} + 2 ))
     [ "$url_inner" -gt "$inner" ] && inner=$url_inner
   fi
-  # Messaging line: "  Messaging:   via OpenClaw native channels (if configured)" = 59 chars + 2 padding
-  [ $(( 59 + 2 )) -gt "$inner" ] && inner=$(( 59 + 2 ))
-  local h_bar=""
-  for ((i = 0; i < inner; i++)); do h_bar+="─"; done
+
+  local term_cols="${COLUMNS:-80}"
+  local max_inner=$(( term_cols - 4 ))
+  [ "$max_inner" -lt 56 ] && max_inner=56  # match TypeScript floor of Math.max(60, cols) - 4
+  [ "$inner" -gt "$max_inner" ] && inner=$max_inner
+
+  local h_bar
+  h_bar=$(awk -v n="$inner" 'BEGIN { for (i = 0; i < n; i++) printf "─" }')
 
   echo ""
   printf "  ┌%s┐\n" "$h_bar"
-  printf "  │  NemoClaw Services%-*s│\n" $((inner - 19)) ""
+  printf "  │%s%-*s│\n" "$title_text" $((inner - ${#title_text})) ""
   printf "  │%-*s│\n" "$inner" ""
   if [ -n "$tunnel_url" ]; then
-    printf "  │  Public URL:  %-*s│\n" $((inner - 15)) "$tunnel_url"
+    printf "  │%s%s%-*s│\n" "$url_label" "$tunnel_url" $((inner - ${#url_label} - ${#tunnel_url})) ""
   fi
-  printf "  │  Messaging:   via OpenClaw native channels (if configured)%-*s│\n" $((inner - 59)) ""
+  printf "  │%s%-*s│\n" "$messaging_text" $((inner - ${#messaging_text})) ""
   printf "  │%-*s│\n" "$inner" ""
-  printf "  │  Run 'openshell term' to monitor egress approvals%-*s│\n" $((inner - 50)) ""
+  printf "  │%s%-*s│\n" "$footer_text" $((inner - ${#footer_text})) ""
   printf "  └%s┘\n" "$h_bar"
   echo ""
 }
