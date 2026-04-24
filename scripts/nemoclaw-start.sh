@@ -1166,6 +1166,86 @@ if [ -f "$_WS_FIX_SCRIPT" ]; then
   export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_WS_FIX_SCRIPT"
 fi
 
+# @homebridge/ciao network-interface fix (NemoClaw#2414).
+# OpenClaw 2026.4.2 introduced @homebridge/ciao for mDNS local service
+# discovery. ciao's NetworkManager calls os.networkInterfaces() eagerly on
+# gateway startup. On Kali Linux and other hosts where Docker's AppArmor or
+# seccomp profile restricts AF_NETLINK socket creation, libuv's
+# uv_interface_addresses() returns EPERM ("Unknown system error 1"). ciao
+# does not catch this and crashes the entire gateway before it serves any
+# request. Downgrading to NemoClaw 0.0.23 (OpenClaw 2026.3.11, no ciao)
+# worked around the issue.
+#
+# The preload wraps os.networkInterfaces() in a try-catch: on systems where
+# it succeeds the real result is returned transparently; on systems where it
+# fails, {} is returned. ciao interprets an empty interface map as "no
+# interfaces to bind" and skips mDNS socket setup gracefully. mDNS/Zeroconf
+# LAN discovery is neither needed nor meaningful inside a Docker container
+# running in its own network namespace (no LAN peers can reach port 5353).
+#
+# Scoped to OPENSHELL_SANDBOX=1 (the env var OpenShell injects at runtime),
+# matching the assertExplicitProxyAllowed bypass guard in the Dockerfile.
+# Outside a sandbox the shim is a no-op, so ciao works normally for
+# non-Docker deployments.
+#
+# Removal: drop when upstream @homebridge/ciao wraps os.networkInterfaces()
+# errors itself, or when OpenClaw exposes a flag to disable mDNS at startup.
+_CIAO_FIX_SCRIPT="/tmp/nemoclaw-ciao-network-fix.js"
+emit_sandbox_sourced_file "$_CIAO_FIX_SCRIPT" <<'CIAO_FIX_EOF'
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// ciao-network-fix.js — wrap os.networkInterfaces() for Docker/seccomp safety.
+//
+// Problem (NemoClaw#2414):
+//   OpenClaw 2026.4.2 introduced @homebridge/ciao for mDNS local service
+//   discovery (Bonjour/Zeroconf LAN zero-config). ciao's NetworkManager calls
+//   os.networkInterfaces() eagerly on gateway startup. On Kali Linux (and
+//   other hosts where Docker's AppArmor or seccomp profile restricts
+//   AF_NETLINK socket creation), libuv's uv_interface_addresses() returns
+//   EPERM ("Unknown system error 1"). ciao does not catch this, so the
+//   entire gateway crashes before it can serve a single request.
+//   NemoClaw 0.0.23 (OpenClaw 2026.3.11, no ciao dependency) was not
+//   affected; the regression was introduced with the 0.0.24 OpenClaw bump.
+//
+// Fix:
+//   Wrap os.networkInterfaces() to return {} when it throws. ciao treats
+//   an empty interface map as "no interfaces found" and skips mDNS socket
+//   binding, degrading gracefully with zero loss of gateway functionality.
+//   mDNS/Zeroconf LAN discovery is neither needed nor meaningful inside a
+//   Docker container running in its own network namespace.
+//
+// Scope:
+//   Activates only when OPENSHELL_SANDBOX=1 (injected by OpenShell at
+//   container runtime — same guard as the assertExplicitProxyAllowed bypass
+//   in the Dockerfile). On bare-metal or CI, the real os.networkInterfaces()
+//   is called unchanged so ciao can do LAN discovery normally.
+//
+// Removal:
+//   Drop when @homebridge/ciao catches uv_interface_addresses errors itself,
+//   or when OpenClaw adds a flag to disable ciao on startup.
+//   Verify removal: start openclaw gateway inside Docker on a Kali host with
+//   AppArmor docker-default and no prior shim — if it starts cleanly, remove.
+
+(function () {
+  'use strict';
+  if (process.env.OPENSHELL_SANDBOX !== '1') return;
+
+  var os = require('os');
+  var origNetworkInterfaces = os.networkInterfaces.bind(os);
+  os.networkInterfaces = function networkInterfaces() {
+    try {
+      return origNetworkInterfaces();
+    } catch (_e) {
+      // uv_interface_addresses returned EPERM (Docker seccomp/AppArmor).
+      // Return {} so @homebridge/ciao skips mDNS binding instead of crashing.
+      return {};
+    }
+  };
+})();
+CIAO_FIX_EOF
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_CIAO_FIX_SCRIPT"
+
 # OpenShell re-injects narrow NO_PROXY/no_proxy=127.0.0.1,localhost,::1 every
 # time a user connects via `openshell sandbox connect`.  The connect path spawns
 # `/bin/bash -i` (interactive, non-login), which sources ~/.bashrc — NOT
@@ -1207,6 +1287,8 @@ PROXYEOF
   fi
   # Nemotron inference fix for connect sessions. (NemoClaw#1193, #2051)
   echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_NEMOTRON_FIX_SCRIPT\""
+  # ciao mDNS network-interface fix for connect sessions. (NemoClaw#2414)
+  echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_CIAO_FIX_SCRIPT\""
   # Tool cache redirects — generated from _TOOL_REDIRECTS (single source of truth)
   echo '# Tool cache redirects — /sandbox is Landlock read-only (#804)'
   for _redir in "${_TOOL_REDIRECTS[@]}"; do
@@ -1343,7 +1425,7 @@ if [ "$(id -u)" -ne 0 ]; then
   # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
   # (both are trust-boundary files; tampering would let the sandbox user
   # inject code into any Node process via NODE_OPTIONS).
-  validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT"
+  validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_FIX_SCRIPT"
 
   # Start gateway in background, auto-pair, then wait.
   # Pass OPENCLAW_GATEWAY_TOKEN only on this launch line so it lives solely
@@ -1483,7 +1565,7 @@ harden_openclaw_symlinks
 # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
 # (both are trust-boundary files; tampering would let the sandbox user
 # inject code into any Node process via NODE_OPTIONS).
-validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT"
+validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_FIX_SCRIPT"
 
 # Start the gateway as the 'gateway' user.
 # SECURITY: The sandbox user cannot kill this process because it runs

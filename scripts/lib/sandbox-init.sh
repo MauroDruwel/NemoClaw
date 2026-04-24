@@ -24,14 +24,17 @@ _SANDBOX_INIT_LOADED=1
 # Files in /tmp that cross user boundaries. Every file sourced by
 # .bashrc/.profile MUST be root-owned 444 in root mode.
 #
-# File                         Owner      Mode  Writer   Reader    Sourced?
-# /tmp/nemoclaw-proxy-env.sh   root       444   root     sandbox   YES (.bashrc/.profile)
-# /tmp/gateway.log             gateway    600   gateway  gateway   no
-# /tmp/auto-pair.log           sandbox    600   sandbox  sandbox   no
-# /tmp/.npm-cache/             sandbox    755   sandbox  sandbox   no (tool data)
-# /tmp/.cache/                 sandbox    755   sandbox  sandbox   no (tool data)
-# /tmp/.config/                sandbox    755   sandbox  sandbox   no (tool data)
-# /tmp/.gnupg/                 sandbox    700   sandbox  sandbox   no (key data)
+# File                              Owner      Mode  Writer   Reader    Sourced?
+# /tmp/nemoclaw-proxy-env.sh        root       444   root     sandbox   YES (.bashrc/.profile)
+# /tmp/nemoclaw-http-proxy-fix.js   root       444   root     node      no (NODE_OPTIONS --require)
+# /tmp/nemoclaw-nemotron-inf-fix.js root       444   root     node      no (NODE_OPTIONS --require)
+# /tmp/nemoclaw-ciao-network-fix.js root       444   root     node      no (NODE_OPTIONS --require)
+# /tmp/gateway.log                  gateway    600   gateway  gateway   no
+# /tmp/auto-pair.log                sandbox    600   sandbox  sandbox   no
+# /tmp/.npm-cache/                  sandbox    755   sandbox  sandbox   no (tool data)
+# /tmp/.cache/                      sandbox    755   sandbox  sandbox   no (tool data)
+# /tmp/.config/                     sandbox    755   sandbox  sandbox   no (tool data)
+# /tmp/.gnupg/                      sandbox    700   sandbox  sandbox   no (key data)
 #
 # In non-root mode privilege separation is disabled — all files are
 # owned by sandbox. chmod 444 is best-effort (owner can chmod back).
